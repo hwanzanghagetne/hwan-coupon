@@ -51,4 +51,23 @@ public class Coupon {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    public static Coupon create(String name, DiscountType discountType, int discountValue,
+                                Integer totalQuantity, Integer minOrderAmount, IssueType issueType,
+                                String issueStartTime, String issueEndTime,
+                                LocalDateTime expiredAt) {
+        Coupon coupon = new Coupon();
+        coupon.name = name;
+        coupon.discountType = discountType;
+        coupon.discountValue = discountValue;
+        coupon.totalQuantity = totalQuantity;
+        coupon.issuedQuantity = 0;
+        coupon.minOrderAmount = minOrderAmount;
+        coupon.issueType = issueType;
+        coupon.issueStartTime = issueStartTime;
+        coupon.issueEndTime = issueEndTime;
+        coupon.expiredAt = expiredAt;
+        coupon.status = CouponStatus.ACTIVE;
+        coupon.createdAt = LocalDateTime.now();
+        return coupon;
+    }
 }
