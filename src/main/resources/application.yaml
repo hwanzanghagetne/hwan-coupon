@@ -1,0 +1,14 @@
+ㄷㄱㅇ spring:
+  application:
+    name: coupon
+  profiles:
+    active: local
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 100
