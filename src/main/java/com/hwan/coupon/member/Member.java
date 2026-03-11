@@ -44,4 +44,18 @@ public class Member {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
+    public static Member create(String email, String password, String name,
+                                LocalDate birthdate, String phone, Role role,
+                                LocalDateTime now) {
+        Member member = new Member();
+        member.email = email;
+        member.password = password;
+        member.name = name;
+        member.birthdate = birthdate;
+        member.phone = phone;
+        member.role = role;
+        member.createdAt = now;
+        member.updatedAt = now;
+        return member;
+    }
 }
