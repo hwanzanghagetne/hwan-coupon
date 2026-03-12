@@ -34,4 +34,14 @@ public class CouponIssue {
 
     @Column(nullable = false)
     private boolean quantitySynced;
+
+    public static CouponIssue create(Long couponId, Long userId) {
+        CouponIssue issue = new CouponIssue();
+        issue.couponId = couponId;
+        issue.userId = userId;
+        issue.status = CouponIssueStatus.ISSUED;
+        issue.issuedAt = LocalDateTime.now();
+        issue.quantitySynced = true;
+        return issue;
+    }
 }

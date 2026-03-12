@@ -39,3 +39,6 @@ out/
 ### Local docs ###
 docs/
 CLAUDE.md
+
+### Claude Code ###
+.claude/
