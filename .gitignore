@@ -40,5 +40,8 @@ out/
 docs/
 CLAUDE.md
 
+### Local scripts ###
+scripts/
+
 ### Claude Code ###
 .claude/
