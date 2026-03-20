@@ -54,26 +54,12 @@ public class Coupon {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public void issue() {
-        validateIssuable();
-        this.issuedQuantity++;
-        if (totalQuantity != null && this.issuedQuantity >= this.totalQuantity) {
-            this.status = CouponStatus.EXHAUSTED;
-        }
-    }
-
-    private void validateIssuable() {
+    public void validateForIssue() {
         if (this.status == CouponStatus.INACTIVE) {
             throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
         }
-        if (this.status == CouponStatus.EXHAUSTED) {
-            throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
-        }
         if (LocalDateTime.now().isAfter(this.expiredAt)) {
             throw new BusinessException(ErrorCode.COUPON_EXPIRED);
-        }
-        if (totalQuantity != null && this.issuedQuantity >= this.totalQuantity) {
-            throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
         }
         if (issueStartTime != null && issueEndTime != null) {
             LocalTime now = LocalTime.now();

@@ -6,8 +6,10 @@ import com.hwan.coupon.coupon.dto.CreateCouponRequest;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
 import com.hwan.coupon.coupon.dto.CouponResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -17,6 +19,8 @@ public class CouponService {
 
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
+    private final CouponRedisService couponRedisService;
+    private final TransactionTemplate transactionTemplate;
 
     @Transactional
     public CouponResponse createCoupon(CreateCouponRequest request) {
@@ -31,24 +35,38 @@ public class CouponService {
                 request.issueEndTime(),
                 request.expiredAt()
         );
-        return CouponResponse.from(couponRepository.save(coupon));
-    }
+        Coupon saved = couponRepository.save(coupon);
 
-    @Transactional
-    public CouponIssueResponse issueCoupon(Long couponId, Long userId) {
-        Coupon coupon = couponRepository.findByIdWithPessimisticLock(couponId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
-
-        if (couponIssueRepository.existsByCouponIdAndUserId(couponId, userId)) {
-            throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
+        if (saved.getIssueType() == IssueType.FIRST_COME && saved.getTotalQuantity() != null) {
+            couponRedisService.initStock(saved.getId(), saved.getTotalQuantity());
         }
 
-        coupon.issue();
+        return CouponResponse.from(saved);
+    }
 
-        CouponIssue couponIssue = CouponIssue.create(couponId, userId);
-        couponIssueRepository.save(couponIssue);
+    public CouponIssueResponse issueCoupon(Long couponId, Long userId) {
+        Coupon coupon = couponRepository.findById(couponId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+        coupon.validateForIssue();
 
-        return CouponIssueResponse.from(couponIssue);
+        long remaining = couponRedisService.tryIssue(couponId, userId);
+        if (remaining == -1) throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
+        if (remaining == -2) throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
+
+        return transactionTemplate.execute(status -> {
+            try {
+                CouponIssue couponIssue = CouponIssue.create(couponId, userId);
+                couponIssueRepository.save(couponIssue);
+                couponRepository.incrementIssuedQuantity(couponId);
+                if (remaining == 0) {
+                    couponRepository.markExhausted(couponId);
+                }
+                return CouponIssueResponse.from(couponIssue);
+            } catch (DataIntegrityViolationException e) {
+                couponRedisService.rollback(couponId, userId);
+                throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
+            }
+        });
     }
 
     @Transactional(readOnly = true)
