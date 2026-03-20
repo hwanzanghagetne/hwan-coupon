@@ -40,6 +40,10 @@ out/
 docs/
 CLAUDE.md
 
+### Local config (contains credentials) ###
+src/main/resources/application-local.yaml
+.env
+
 ### Local scripts ###
 scripts/
 
