@@ -1,8 +1,8 @@
 package com.hwan.coupon.coupon;
 
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
-import com.hwan.coupon.coupon.dto.CreateCouponRequest;
 import com.hwan.coupon.coupon.dto.CouponResponse;
+import com.hwan.coupon.coupon.dto.CreateCouponRequest;
 import com.hwan.coupon.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -44,4 +44,5 @@ public class CouponController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         return ResponseEntity.ok(couponService.issueCoupon(couponId, userDetails.getMember().getId()));
     }
+
 }
