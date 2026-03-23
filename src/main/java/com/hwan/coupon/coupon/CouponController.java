@@ -1,8 +1,6 @@
 package com.hwan.coupon.coupon;
 
-import com.hwan.coupon.coupon.dto.CouponIssueResponse;
-import com.hwan.coupon.coupon.dto.CouponResponse;
-import com.hwan.coupon.coupon.dto.CreateCouponRequest;
+import com.hwan.coupon.coupon.dto.*;
 import com.hwan.coupon.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +41,34 @@ public class CouponController {
             @PathVariable Long couponId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         return ResponseEntity.ok(couponService.issueCoupon(couponId, userDetails.getMember().getId()));
+    }
+
+    @GetMapping("/my")
+    public ResponseEntity<List<MyCouponResponse>> getMyCoupons(
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(couponService.getMyCoupons(userDetails.getMember().getId()));
+    }
+
+    @PostMapping("/{couponId}/use")
+    public ResponseEntity<CouponIssueResponse> useCoupon(
+            @PathVariable Long couponId,
+            @RequestBody @Valid UseCouponRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(couponService.useCoupon(couponId, userDetails.getMember().getId(), request.orderAmount()));
+    }
+
+    @PostMapping("/{couponId}/restore")
+    public ResponseEntity<CouponIssueResponse> restoreCoupon(
+            @PathVariable Long couponId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(couponService.restoreCoupon(couponId, userDetails.getMember().getId()));
+    }
+
+    @GetMapping("/stats/monthly")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<MonthlyStatsResponse>> getMonthlyStats(
+            @RequestParam int year) {
+        return ResponseEntity.ok(couponService.getMonthlyStats(year));
     }
 
 }
