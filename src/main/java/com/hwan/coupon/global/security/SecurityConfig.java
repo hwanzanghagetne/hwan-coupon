@@ -32,11 +32,12 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/members/signup", "/api/members/login").permitAll()
+                .requestMatchers("/api/members/logout").authenticated()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .sessionManagement(session -> session
-                .sessionFixation().none()
+                .sessionFixation().changeSessionId()
             )
             .formLogin(form -> form.disable())
             .httpBasic(basic -> basic.disable());

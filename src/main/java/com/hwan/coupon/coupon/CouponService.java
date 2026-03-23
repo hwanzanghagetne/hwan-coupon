@@ -1,9 +1,9 @@
 package com.hwan.coupon.coupon;
 
-import com.hwan.coupon.global.exception.BusinessException;
-import com.hwan.coupon.global.exception.ErrorCode;
 import com.hwan.coupon.coupon.dto.*;
 import com.hwan.coupon.coupon.dto.MonthlyStatsProjection;
+import com.hwan.coupon.global.exception.BusinessException;
+import com.hwan.coupon.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -11,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,6 +23,7 @@ public class CouponService {
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
     private final CouponRedisService couponRedisService;
+    private final CouponCacheService couponCacheService;
     private final TransactionTemplate transactionTemplate;
 
     @Transactional
@@ -49,9 +49,8 @@ public class CouponService {
     }
 
     public CouponIssueResponse issueCoupon(Long couponId, Long userId) {
-        Coupon coupon = couponRepository.findById(couponId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
-        coupon.validateForIssue();
+        CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
+        cached.validateForIssue();
 
         long remaining = couponRedisService.tryIssue(couponId, userId);
         if (remaining == -1) throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
@@ -64,6 +63,7 @@ public class CouponService {
                 couponRepository.incrementIssuedQuantity(couponId);
                 if (remaining == 0) {
                     couponRepository.markExhausted(couponId);
+                    couponCacheService.evict(couponId);
                 }
                 return CouponIssueResponse.from(couponIssue);
             } catch (DataIntegrityViolationException e) {
@@ -75,17 +75,16 @@ public class CouponService {
 
     @Transactional
     public CouponIssueResponse useCoupon(Long couponId, Long userId, int orderAmount) {
-        Coupon coupon = couponRepository.findById(couponId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+        CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
 
-        if (LocalDateTime.now().isAfter(coupon.getExpiredAt())) {
+        if (LocalDateTime.now().isAfter(cached.expiredAt())) {
             throw new BusinessException(ErrorCode.COUPON_EXPIRED);
         }
 
         CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserId(couponId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
 
-        couponIssue.use(orderAmount, coupon.getMinOrderAmount());
+        couponIssue.use(orderAmount, cached.minOrderAmount());
         return CouponIssueResponse.from(couponIssue);
     }
 
@@ -110,6 +109,7 @@ public class CouponService {
                 .collect(Collectors.toMap(Coupon::getId, c -> c));
 
         return issues.stream()
+                .filter(issue -> couponMap.containsKey(issue.getCouponId()))
                 .map(issue -> MyCouponResponse.from(issue, couponMap.get(issue.getCouponId())))
                 .toList();
     }
