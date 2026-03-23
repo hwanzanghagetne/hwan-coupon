@@ -45,4 +45,10 @@ public class MemberController {
 
         return ResponseEntity.ok(new LoginResponse(member.getId(), member.getEmail(), member.getName(), member.getRole()));
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpSession session) {
+        session.invalidate();
+        return ResponseEntity.noContent().build();
+    }
 }
