@@ -52,25 +52,42 @@ public class CouponService {
         CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
         cached.validateForIssue();
 
+        // Redis 키 유실 시 DB 기준으로 재고 복구 (DB가 source of truth)
+        if (!couponRedisService.hasStock(couponId)) {
+            Coupon coupon = couponRepository.findById(couponId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+            if (coupon.getTotalQuantity() != null) {
+                int remaining = Math.max(0, coupon.getTotalQuantity() - coupon.getIssuedQuantity());
+                couponRedisService.syncStockIfAbsent(couponId, remaining);
+            }
+        }
+
         long remaining = couponRedisService.tryIssue(couponId, userId);
         if (remaining == -1) throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
         if (remaining == -2) throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
 
-        return transactionTemplate.execute(status -> {
-            try {
-                CouponIssue couponIssue = CouponIssue.create(couponId, userId);
-                couponIssueRepository.save(couponIssue);
-                couponRepository.incrementIssuedQuantity(couponId);
-                if (remaining == 0) {
-                    couponRepository.markExhausted(couponId);
-                    couponCacheService.evict(couponId);
+        try {
+            return transactionTemplate.execute(status -> {
+                try {
+                    CouponIssue couponIssue = CouponIssue.create(couponId, userId);
+                    couponIssueRepository.save(couponIssue);
+                    couponRepository.incrementIssuedQuantity(couponId);
+                    if (remaining == 0) {
+                        couponRepository.markExhausted(couponId);
+                        couponCacheService.evict(couponId);
+                    }
+                    return CouponIssueResponse.from(couponIssue);
+                } catch (DataIntegrityViolationException e) {
+                    couponRedisService.rollback(couponId, userId);
+                    throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
                 }
-                return CouponIssueResponse.from(couponIssue);
-            } catch (DataIntegrityViolationException e) {
-                couponRedisService.rollback(couponId, userId);
-                throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
-            }
-        });
+            });
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            couponRedisService.rollback(couponId, userId);
+            throw e;
+        }
     }
 
     @Transactional
