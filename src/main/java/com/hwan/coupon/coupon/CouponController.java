@@ -17,6 +17,7 @@ import java.util.List;
 public class CouponController {
 
     private final CouponService couponService;
+    private final AdminBatchService adminBatchService;
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -69,6 +70,20 @@ public class CouponController {
     public ResponseEntity<List<MonthlyStatsResponse>> getMonthlyStats(
             @RequestParam int year) {
         return ResponseEntity.ok(couponService.getMonthlyStats(year));
+    }
+
+    @PostMapping("/{couponId}/batch-issue")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BatchIssueResponse> batchIssue(
+            @PathVariable Long couponId,
+            @RequestBody @Valid BatchIssueRequest request) {
+        return ResponseEntity.ok(adminBatchService.requestBatch(couponId, request.userIds()));
+    }
+
+    @GetMapping("/batches/{batchId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BatchIssueResponse> getBatchStatus(@PathVariable Long batchId) {
+        return ResponseEntity.ok(adminBatchService.getBatchStatus(batchId));
     }
 
 }
