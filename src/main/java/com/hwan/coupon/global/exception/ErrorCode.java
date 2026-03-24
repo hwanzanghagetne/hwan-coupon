@@ -20,7 +20,10 @@ public enum ErrorCode {
     COUPON_EXPIRED(400, "만료된 쿠폰입니다"),
     COUPON_NOT_APPLICABLE(400, "최소 주문 금액 조건을 충족하지 않습니다"),
     COUPON_RESTORE_NOT_ALLOWED(400, "복원할 수 없는 쿠폰 상태입니다"),
-    COUPON_CONFLICT(409, "요청이 충돌했습니다. 다시 시도해주세요");
+    COUPON_CONFLICT(409, "요청이 충돌했습니다. 다시 시도해주세요"),
+
+    // Batch
+    BATCH_NOT_FOUND(404, "배치를 찾을 수 없습니다");
 
     private final int status;
     private final String message;

@@ -30,4 +30,27 @@ public class CouponIssueBatch {
     private LocalDateTime requestedAt;
 
     private LocalDateTime completedAt;
+
+    public static CouponIssueBatch create(Long couponId, int targetCount) {
+        CouponIssueBatch batch = new CouponIssueBatch();
+        batch.couponId = couponId;
+        batch.targetCount = targetCount;
+        batch.status = BatchStatus.PENDING;
+        batch.requestedAt = LocalDateTime.now();
+        return batch;
+    }
+
+    public void markProcessing() {
+        this.status = BatchStatus.PROCESSING;
+    }
+
+    public void markDone() {
+        this.status = BatchStatus.DONE;
+        this.completedAt = LocalDateTime.now();
+    }
+
+    public void markFailed() {
+        this.status = BatchStatus.FAILED;
+        this.completedAt = LocalDateTime.now();
+    }
 }
