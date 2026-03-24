@@ -33,4 +33,12 @@ public class CouponRedisService {
         redisTemplate.opsForValue().increment(STOCK_KEY + couponId);
         redisTemplate.opsForSet().remove(ISSUED_KEY + couponId, String.valueOf(userId));
     }
+
+    public boolean hasStock(Long couponId) {
+        return Boolean.TRUE.equals(redisTemplate.hasKey(STOCK_KEY + couponId));
+    }
+
+    public void syncStockIfAbsent(Long couponId, int remaining) {
+        redisTemplate.opsForValue().setIfAbsent(STOCK_KEY + couponId, String.valueOf(remaining));
+    }
 }
