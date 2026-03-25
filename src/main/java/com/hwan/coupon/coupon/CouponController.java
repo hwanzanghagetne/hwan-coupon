@@ -86,4 +86,11 @@ public class CouponController {
         return ResponseEntity.ok(adminBatchService.getBatchStatus(batchId));
     }
 
+    @PatchMapping("/{couponId}/deactivate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deactivateCoupon(@PathVariable Long couponId) {
+        couponService.deactivateCoupon(couponId);
+        return ResponseEntity.noContent().build();
+    }
+
 }
