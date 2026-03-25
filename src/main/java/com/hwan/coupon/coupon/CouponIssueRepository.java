@@ -31,4 +31,8 @@ public interface CouponIssueRepository extends JpaRepository<CouponIssue, Long> 
             ORDER BY DATE_FORMAT(issued_at, '%Y-%m')
             """, nativeQuery = true)
     List<MonthlyStatsProjection> findMonthlyStatsByYear(@Param("year") int year);
+
+    @Modifying
+    @Query("UPDATE CouponIssue ci SET ci.status = 'EXPIRED' WHERE ci.couponId IN :couponIds AND ci.status = 'ISSUED'")
+    int expireIssuedByCouponIds(@Param("couponIds") List<Long> couponIds);
 }
