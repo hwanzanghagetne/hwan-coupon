@@ -146,6 +146,20 @@ public class CouponService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
+    public void deactivateCoupon(Long couponId) {
+        int updated = couponRepository.markInactive(couponId);
+
+        if (updated == 0) {
+            // 업데이트된 행이 없음 → 쿠폰이 없거나 이미 비활성 상태
+            couponRepository.findById(couponId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+            throw new BusinessException(ErrorCode.COUPON_ALREADY_INACTIVE);
+        }
+
+        couponCacheService.evict(couponId);
+    }
+
     @Transactional(readOnly = true)
     public List<CouponResponse> getCoupons() {
         return couponRepository.findAll().stream()
