@@ -1,8 +1,9 @@
 package com.hwan.coupon.coupon;
 
+import com.hwan.coupon.global.config.RabbitMQConfig;
 import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -22,8 +23,13 @@ public class BatchProcessor {
 
     private static final int CHUNK_SIZE = 1000;
 
-    @Async("batchExecutor")
-    public void processBatch(Long batchId, Long couponId, List<Long> userIds) {
+    @RabbitListener(queues = RabbitMQConfig.QUEUE)
+    public void processBatch(BatchMessagePayload payload) {
+        Long batchId  = payload.batchId();
+        Long couponId = payload.couponId();
+        List<Long> userIds = payload.userIds();
+
+
         // 1단계: PROCESSING — 독립 트랜잭션으로 커밋
         transactionTemplate.executeWithoutResult(status -> {
             CouponIssueBatch batch = batchRepository.findById(batchId).orElseThrow();
@@ -32,8 +38,6 @@ public class BatchProcessor {
 
         try {
             // 2단계: 1000건씩 청크로 나눠 bulk INSERT
-            // rewriteBatchedStatements=true 로 MySQL이 multi-value INSERT로 재작성
-            // e.g. INSERT INTO coupon_issue VALUES (1,...), (2,...), ... — DB 왕복 1회/청크
             List<List<Long>> chunks = partition(userIds, CHUNK_SIZE);
             for (List<Long> chunk : chunks) {
                 bulkInsert(couponId, chunk);
