@@ -1,0 +1,53 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Docker 이미지 빌드
+        run: docker build -t hwan-coupon .
+
+      - name: Docker 이미지를 tar로 저장
+        run: docker save hwan-coupon | gzip > hwan-coupon.tar.gz
+
+      - name: EC2로 이미지 전송
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: hwan-coupon.tar.gz
+          target: /home/${{ secrets.EC2_USER }}
+
+      - name: EC2에서 컨테이너 재시작
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker load < ~/hwan-coupon.tar.gz
+            docker stop hwan-coupon || true
+            docker rm hwan-coupon || true
+            docker run -d \
+              --name hwan-coupon \
+              --restart always \
+              -p 8080:8080 \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e DB_URL=${{ secrets.DB_URL }} \
+              -e DB_USERNAME=${{ secrets.DB_USERNAME }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e REDIS_HOST=${{ secrets.REDIS_HOST }} \
+              -e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }} \
+              -e RABBITMQ_USERNAME=${{ secrets.RABBITMQ_USERNAME }} \
+              -e RABBITMQ_PASSWORD=${{ secrets.RABBITMQ_PASSWORD }} \
+              hwan-coupon
+            rm ~/hwan-coupon.tar.gz
