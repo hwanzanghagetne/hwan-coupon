@@ -37,8 +37,10 @@ public class Coupon {
     @Column(nullable = false)
     private IssueType issueType;
 
+    @Column(length = 10)
     private String issueStartTime;
 
+    @Column(length = 10)
     private String issueEndTime;
 
     @Column(nullable = false)
