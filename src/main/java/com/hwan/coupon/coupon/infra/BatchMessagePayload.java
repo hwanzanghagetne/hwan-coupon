@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.infra;
 
 import java.util.List;
 

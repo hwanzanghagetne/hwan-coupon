@@ -1,4 +1,10 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.infra;
+
+import com.hwan.coupon.coupon.domain.CouponIssueStatus;
+import com.hwan.coupon.coupon.domain.CouponStatus;
+import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.coupon.repository.CouponIssueRepository;
+import com.hwan.coupon.coupon.service.CouponCacheService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +30,7 @@ public class CouponExpiryScheduler {
         LocalDateTime now = LocalDateTime.now();
 
         // 1단계: 만료 대상 쿠폰 ID 조회 (트랜잭션 없이 단순 SELECT)
-        List<Long> expiredCouponIds = couponRepository.findExpiredActiveCouponIds(now);
+        List<Long> expiredCouponIds = couponRepository.findExpiredActiveCouponIds(CouponStatus.ACTIVE, now);
 
         if (expiredCouponIds.isEmpty()) {
             log.info("[CouponExpiryScheduler] 만료 대상 없음");
@@ -36,8 +42,8 @@ public class CouponExpiryScheduler {
         // @Transactional 대신 TransactionTemplate을 쓰는 이유:
         //   이 블록이 끝나면 즉시 커밋됨 → 이후 Redis evict를 DB 커밋 완료 후 실행 가능
         int[] result = transactionTemplate.execute(status -> {
-            int coupons = couponRepository.markInactiveByIds(expiredCouponIds);
-            int issues = couponIssueRepository.expireIssuedByCouponIds(expiredCouponIds);
+            int coupons = couponRepository.markInactiveByIds(expiredCouponIds, CouponStatus.INACTIVE, CouponStatus.ACTIVE);
+            int issues = couponIssueRepository.expireIssuedByCouponIds(expiredCouponIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED);
             return new int[]{coupons, issues};
         });
 

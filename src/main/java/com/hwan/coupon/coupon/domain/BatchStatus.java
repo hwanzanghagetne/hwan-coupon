@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 public enum BatchStatus {
     PENDING,        // 대기 중

@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 public enum CouponIssueStatus {
     ISSUED,     // 발급됨 (사용 가능)
