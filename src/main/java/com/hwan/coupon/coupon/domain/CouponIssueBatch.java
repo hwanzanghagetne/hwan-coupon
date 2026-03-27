@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;

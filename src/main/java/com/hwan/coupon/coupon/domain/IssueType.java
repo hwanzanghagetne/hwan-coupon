@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 public enum IssueType {
     FIRST_COME,     // 선착순 발급 (사용자가 직접 요청)

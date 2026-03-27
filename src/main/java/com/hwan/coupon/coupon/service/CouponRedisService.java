@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,16 +22,24 @@ public class CouponRedisService {
     }
 
     public long tryIssue(Long couponId, Long userId) {
-        return redisTemplate.execute(
+        Long result = redisTemplate.execute(
                 couponIssueScript,
                 List.of(STOCK_KEY + couponId, ISSUED_KEY + couponId),
                 String.valueOf(userId)
         );
+        if (result == null) {
+            throw new IllegalStateException("Redis Lua Script 실행 결과가 null입니다. couponId=" + couponId);
+        }
+        return result;
     }
 
     public void rollback(Long couponId, Long userId) {
         redisTemplate.opsForValue().increment(STOCK_KEY + couponId);
         redisTemplate.opsForSet().remove(ISSUED_KEY + couponId, String.valueOf(userId));
+    }
+
+    public void rollbackStockOnly(Long couponId) {
+        redisTemplate.opsForValue().increment(STOCK_KEY + couponId);
     }
 
     public boolean hasStock(Long couponId) {

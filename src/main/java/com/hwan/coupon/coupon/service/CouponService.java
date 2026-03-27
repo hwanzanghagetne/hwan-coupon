@@ -1,21 +1,39 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.service;
 
-import com.hwan.coupon.coupon.dto.*;
+import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.domain.CouponIssue;
+import com.hwan.coupon.coupon.domain.CouponStatus;
+import com.hwan.coupon.coupon.domain.IssueType;
+import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.coupon.repository.CouponIssueRepository;
+
+import com.hwan.coupon.coupon.dto.CouponCacheDto;
+import com.hwan.coupon.coupon.dto.CouponIssueResponse;
+import com.hwan.coupon.coupon.dto.CouponResponse;
+import com.hwan.coupon.coupon.dto.CreateCouponRequest;
 import com.hwan.coupon.coupon.dto.MonthlyStatsProjection;
+import com.hwan.coupon.coupon.dto.MonthlyStatsResponse;
+import com.hwan.coupon.coupon.dto.MyCouponResponse;
 import com.hwan.coupon.global.exception.BusinessException;
 import com.hwan.coupon.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CouponService {
@@ -26,23 +44,29 @@ public class CouponService {
     private final CouponCacheService couponCacheService;
     private final TransactionTemplate transactionTemplate;
 
-    @Transactional
     public CouponResponse createCoupon(CreateCouponRequest request) {
-        Coupon coupon = Coupon.create(
-                request.name(),
-                request.discountType(),
-                request.discountValue(),
-                request.totalQuantity(),
-                request.minOrderAmount(),
-                request.issueType(),
-                request.issueStartTime(),
-                request.issueEndTime(),
-                request.expiredAt()
-        );
-        Coupon saved = couponRepository.save(coupon);
+        // DB 커밋과 Redis 초기화를 분리 — @Transactional은 메서드 끝에서 커밋하므로
+        // 커밋 전에 Redis에 재고가 세팅될 수 있음. DB 롤백 시 Redis만 남는 불일치 방지.
+        Coupon saved = transactionTemplate.execute(status -> {
+            Coupon coupon = Coupon.create(
+                    request.name(),
+                    request.discountType(),
+                    request.discountValue(),
+                    request.totalQuantity(),
+                    request.minOrderAmount(),
+                    request.issueType(),
+                    request.issueStartTime(),
+                    request.issueEndTime(),
+                    request.expiredAt()
+            );
+            return couponRepository.save(coupon);
+        });
+        log.info("쿠폰 생성 완료 couponId={} name={} issueType={}", saved.getId(), saved.getName(), saved.getIssueType());
 
+        // DB 커밋 완료 후 Redis 초기화 — 이 시점에 실패해도 issueCoupon()의 syncStockIfAbsent가 복구
         if (saved.getIssueType() == IssueType.FIRST_COME && saved.getTotalQuantity() != null) {
             couponRedisService.initStock(saved.getId(), saved.getTotalQuantity());
+            log.info("Redis 재고 초기화 couponId={} totalQuantity={}", saved.getId(), saved.getTotalQuantity());
         }
 
         return CouponResponse.from(saved);
@@ -50,7 +74,7 @@ public class CouponService {
 
     public CouponIssueResponse issueCoupon(Long couponId, Long userId) {
         CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
-        cached.validateForIssue();
+        validateCouponForIssue(cached);
 
         // Redis 키 유실 시 DB 기준으로 재고 복구 (DB가 source of truth)
         if (!couponRedisService.hasStock(couponId)) {
@@ -63,8 +87,15 @@ public class CouponService {
         }
 
         long remaining = couponRedisService.tryIssue(couponId, userId);
-        if (remaining == -1) throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
-        if (remaining == -2) throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
+        if (remaining == -1) {
+            log.warn("쿠폰 소진 couponId={} userId={}", couponId, userId);
+            throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
+        }
+        if (remaining == -2) {
+            log.warn("중복 발급 시도 couponId={} userId={}", couponId, userId);
+            throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
+        }
+        log.info("쿠폰 발급 성공 couponId={} userId={} remaining={}", couponId, userId, remaining);
 
         try {
             return transactionTemplate.execute(status -> {
@@ -73,12 +104,12 @@ public class CouponService {
                     couponIssueRepository.save(couponIssue);
                     couponRepository.incrementIssuedQuantity(couponId);
                     if (remaining == 0) {
-                        couponRepository.markExhausted(couponId);
+                        couponRepository.markExhausted(couponId, CouponStatus.EXHAUSTED);
                         couponCacheService.evict(couponId);
                     }
                     return CouponIssueResponse.from(couponIssue);
                 } catch (DataIntegrityViolationException e) {
-                    couponRedisService.rollback(couponId, userId);
+                    couponRedisService.rollbackStockOnly(couponId);
                     throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
                 }
             });
@@ -92,43 +123,40 @@ public class CouponService {
 
     @Transactional
     public CouponIssueResponse useCoupon(Long couponId, Long userId, int orderAmount) {
-        CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
+        // 만료 체크는 실제 돈이 오가는 행위이므로 캐시가 아닌 DB 기준으로 확인
+        // 캐시 TTL(10분) 동안 만료된 쿠폰이 사용되는 것을 방지
+        Coupon coupon = couponRepository.findById(couponId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
 
-        if (LocalDateTime.now().isAfter(cached.expiredAt())) {
+        if (LocalDateTime.now().isAfter(coupon.getExpiredAt())) {
             throw new BusinessException(ErrorCode.COUPON_EXPIRED);
         }
 
         CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserId(couponId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_ISSUE_NOT_FOUND));
 
-        couponIssue.use(orderAmount, cached.minOrderAmount());
+        couponIssue.use(orderAmount, coupon.getMinOrderAmount());
         return CouponIssueResponse.from(couponIssue);
     }
 
     @Transactional
     public CouponIssueResponse restoreCoupon(Long couponId, Long userId) {
         CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserId(couponId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_ISSUE_NOT_FOUND));
 
         couponIssue.restore();
         return CouponIssueResponse.from(couponIssue);
     }
 
     @Transactional(readOnly = true)
-    public List<MyCouponResponse> getMyCoupons(Long userId) {
-        List<CouponIssue> issues = couponIssueRepository.findAllByUserId(userId);
-        if (issues.isEmpty()) {
-            return List.of();
-        }
+    public Page<MyCouponResponse> getMyCoupons(Long userId, Pageable pageable) {
+        Page<CouponIssue> issuePage = couponIssueRepository.findAllByUserId(userId, pageable);
 
-        List<Long> couponIds = issues.stream().map(CouponIssue::getCouponId).toList();
+        List<Long> couponIds = issuePage.getContent().stream().map(CouponIssue::getCouponId).toList();
         Map<Long, Coupon> couponMap = couponRepository.findAllById(couponIds).stream()
                 .collect(Collectors.toMap(Coupon::getId, c -> c));
 
-        return issues.stream()
-                .filter(issue -> couponMap.containsKey(issue.getCouponId()))
-                .map(issue -> MyCouponResponse.from(issue, couponMap.get(issue.getCouponId())))
-                .toList();
+        return issuePage.map(issue -> MyCouponResponse.from(issue, couponMap.get(issue.getCouponId())));
     }
 
     @Transactional(readOnly = true)
@@ -148,7 +176,7 @@ public class CouponService {
 
     @Transactional
     public void deactivateCoupon(Long couponId) {
-        int updated = couponRepository.markInactive(couponId);
+        int updated = couponRepository.markInactive(couponId, CouponStatus.INACTIVE, CouponStatus.ACTIVE);
 
         if (updated == 0) {
             // 업데이트된 행이 없음 → 쿠폰이 없거나 이미 비활성 상태
@@ -161,10 +189,8 @@ public class CouponService {
     }
 
     @Transactional(readOnly = true)
-    public List<CouponResponse> getCoupons() {
-        return couponRepository.findAll().stream()
-                .map(CouponResponse::from)
-                .toList();
+    public Page<CouponResponse> getCoupons(Pageable pageable) {
+        return couponRepository.findAll(pageable).map(CouponResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -172,5 +198,25 @@ public class CouponService {
         Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
         return CouponResponse.from(coupon);
+    }
+
+    private void validateCouponForIssue(CouponCacheDto cached) {
+        if (cached.status() == CouponStatus.INACTIVE) {
+            throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
+        }
+        if (cached.status() == CouponStatus.EXHAUSTED) {
+            throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
+        }
+        if (LocalDateTime.now().isAfter(cached.expiredAt())) {
+            throw new BusinessException(ErrorCode.COUPON_EXPIRED);
+        }
+        if (cached.issueStartTime() != null && cached.issueEndTime() != null) {
+            LocalTime now = LocalTime.now();
+            LocalTime start = LocalTime.parse(cached.issueStartTime());
+            LocalTime end = LocalTime.parse(cached.issueEndTime());
+            if (now.isBefore(start) || now.isAfter(end)) {
+                throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
+            }
+        }
     }
 }
