@@ -3,6 +3,11 @@ spring:
     name: coupon
   profiles:
     active: local
+  session:
+    store-type: redis
+    timeout: 30m
+    redis:
+      namespace: coupon:session
   jpa:
     open-in-view: false
     hibernate:
