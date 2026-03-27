@@ -1,4 +1,7 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.service;
+
+import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.repository.CouponRepository;
 
 import com.hwan.coupon.coupon.dto.CouponCacheDto;
 import com.hwan.coupon.global.exception.BusinessException;
