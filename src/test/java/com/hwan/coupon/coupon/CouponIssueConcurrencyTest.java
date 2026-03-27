@@ -1,5 +1,11 @@
 package com.hwan.coupon.coupon;
 
+import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.domain.DiscountType;
+import com.hwan.coupon.coupon.domain.IssueType;
+import com.hwan.coupon.coupon.repository.CouponIssueRepository;
+import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.coupon.service.CouponService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

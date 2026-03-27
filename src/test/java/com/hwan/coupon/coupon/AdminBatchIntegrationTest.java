@@ -1,6 +1,15 @@
 package com.hwan.coupon.coupon;
 
+import com.hwan.coupon.coupon.domain.BatchStatus;
+import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.domain.CouponIssueBatch;
+import com.hwan.coupon.coupon.domain.DiscountType;
+import com.hwan.coupon.coupon.domain.IssueType;
 import com.hwan.coupon.coupon.dto.BatchIssueResponse;
+import com.hwan.coupon.coupon.repository.CouponIssueBatchRepository;
+import com.hwan.coupon.coupon.repository.CouponIssueRepository;
+import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.coupon.service.AdminBatchService;
 import com.hwan.coupon.global.exception.BusinessException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +38,6 @@ class AdminBatchIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
 
     private Long couponId;
-    // 실제 member 없이 임의 userId 사용 (coupon_issue.user_id 는 FK 아님)
     private final List<Long> testUserIds = List.of(10001L, 10002L, 10003L, 10004L, 10005L);
 
     @BeforeEach
@@ -71,15 +79,12 @@ class AdminBatchIntegrationTest {
                         .orElse(false)
         );
 
-        // 발급 이력 건수 확인
         long issuedCount = couponIssueRepository.countByCouponId(couponId);
         assertThat(issuedCount).isEqualTo(testUserIds.size());
 
-        // issued_quantity 동기화 확인
         int issuedQuantity = couponRepository.findById(couponId).orElseThrow().getIssuedQuantity();
         assertThat(issuedQuantity).isEqualTo(testUserIds.size());
 
-        // completedAt 기록 확인
         CouponIssueBatch batch = batchRepository.findById(response.batchId()).orElseThrow();
         assertThat(batch.getCompletedAt()).isNotNull();
     }
@@ -103,13 +108,11 @@ class AdminBatchIntegrationTest {
     @Test
     @DisplayName("이미 발급받은 유저가 포함되면 UNIQUE 제약 위반으로 배치가 FAILED 된다")
     void 중복_유저_포함시_배치_FAILED() {
-        // 먼저 testUserIds[0] 한 명에게 발급
         adminBatchService.requestBatch(couponId, List.of(testUserIds.get(0)));
         await().atMost(5, TimeUnit.SECONDS).until(() ->
                 couponIssueRepository.findByCouponIdAndUserId(couponId, testUserIds.get(0)).isPresent()
         );
 
-        // 동일 유저를 포함해서 전체 목록으로 다시 요청
         BatchIssueResponse response = adminBatchService.requestBatch(couponId, testUserIds);
 
         await().atMost(5, TimeUnit.SECONDS).until(() ->
@@ -118,7 +121,6 @@ class AdminBatchIntegrationTest {
                         .orElse(false)
         );
 
-        // 현재 구현은 saveAll() 도중 UNIQUE 위반 시 전체 배치가 FAILED
         assertThat(batchRepository.findById(response.batchId()).orElseThrow().getStatus())
                 .isEqualTo(BatchStatus.FAILED);
     }
