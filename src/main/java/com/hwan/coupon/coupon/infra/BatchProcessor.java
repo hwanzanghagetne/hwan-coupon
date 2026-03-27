@@ -85,8 +85,8 @@ public class BatchProcessor {
     }
 
     private int bulkInsert(Long couponId, List<Long> userIds) {
-        String sql = "INSERT IGNORE INTO coupon_issue (coupon_id, user_id, status, issued_at, quantity_synced) " +
-                     "VALUES (?, ?, 'ISSUED', ?, true)";
+        String sql = "INSERT IGNORE INTO coupon_issue (coupon_id, user_id, status, issued_at) " +
+                     "VALUES (?, ?, 'ISSUED', ?)";
         Timestamp now = Timestamp.valueOf(LocalDateTime.now());
 
         int[][] results = jdbcTemplate.batchUpdate(sql, userIds, userIds.size(), (ps, userId) -> {
