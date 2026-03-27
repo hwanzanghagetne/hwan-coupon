@@ -1,7 +1,7 @@
 package com.hwan.coupon.coupon.dto;
 
-import com.hwan.coupon.coupon.BatchStatus;
-import com.hwan.coupon.coupon.CouponIssueBatch;
+import com.hwan.coupon.coupon.domain.BatchStatus;
+import com.hwan.coupon.coupon.domain.CouponIssueBatch;
 
 import java.time.LocalDateTime;
 

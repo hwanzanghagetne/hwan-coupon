@@ -1,16 +1,27 @@
 package com.hwan.coupon.coupon;
 
+import com.hwan.coupon.coupon.service.CouponService;
+import com.hwan.coupon.coupon.service.AdminBatchService;
+
 import com.hwan.coupon.coupon.dto.*;
 import com.hwan.coupon.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Validated
 @RestController
 @RequestMapping("/api/coupons")
 @RequiredArgsConstructor
@@ -27,8 +38,9 @@ public class CouponController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<CouponResponse>> getCoupons() {
-        return ResponseEntity.ok(couponService.getCoupons());
+    public ResponseEntity<Page<CouponResponse>> getCoupons(
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(couponService.getCoupons(pageable));
     }
 
     @GetMapping("/{couponId}")
@@ -38,6 +50,7 @@ public class CouponController {
     }
 
     @PostMapping("/{couponId}/issue")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CouponIssueResponse> issueCoupon(
             @PathVariable Long couponId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -45,12 +58,15 @@ public class CouponController {
     }
 
     @GetMapping("/my")
-    public ResponseEntity<List<MyCouponResponse>> getMyCoupons(
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(couponService.getMyCoupons(userDetails.getMember().getId()));
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Page<MyCouponResponse>> getMyCoupons(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PageableDefault(size = 20, sort = "issuedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(couponService.getMyCoupons(userDetails.getMember().getId(), pageable));
     }
 
     @PostMapping("/{couponId}/use")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CouponIssueResponse> useCoupon(
             @PathVariable Long couponId,
             @RequestBody @Valid UseCouponRequest request,
@@ -59,6 +75,7 @@ public class CouponController {
     }
 
     @PostMapping("/{couponId}/restore")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CouponIssueResponse> restoreCoupon(
             @PathVariable Long couponId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -68,7 +85,7 @@ public class CouponController {
     @GetMapping("/stats/monthly")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<MonthlyStatsResponse>> getMonthlyStats(
-            @RequestParam int year) {
+            @RequestParam @Min(2000) @Max(2100) int year) {
         return ResponseEntity.ok(couponService.getMonthlyStats(year));
     }
 
