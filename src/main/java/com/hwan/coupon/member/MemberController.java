@@ -36,7 +36,7 @@ public class MemberController {
                 new UsernamePasswordAuthenticationToken(request.email(), request.password())
         );
 
-        SecurityContext securityContext = SecurityContextHolder.getContext();
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
         securityContext.setAuthentication(authentication);
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
 

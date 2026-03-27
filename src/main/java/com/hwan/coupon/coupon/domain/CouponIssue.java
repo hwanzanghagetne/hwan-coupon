@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 import com.hwan.coupon.global.exception.BusinessException;
 import com.hwan.coupon.global.exception.ErrorCode;
