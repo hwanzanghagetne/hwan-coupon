@@ -1,9 +1,9 @@
 package com.hwan.coupon.coupon.dto;
 
-import com.hwan.coupon.coupon.Coupon;
-import com.hwan.coupon.coupon.CouponStatus;
-import com.hwan.coupon.coupon.DiscountType;
-import com.hwan.coupon.coupon.IssueType;
+import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.domain.CouponStatus;
+import com.hwan.coupon.coupon.domain.DiscountType;
+import com.hwan.coupon.coupon.domain.IssueType;
 import java.time.LocalDateTime;
 
 public record CouponResponse(

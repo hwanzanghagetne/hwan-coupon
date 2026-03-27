@@ -1,12 +1,9 @@
 package com.hwan.coupon.coupon.dto;
 
-import com.hwan.coupon.coupon.Coupon;
-import com.hwan.coupon.coupon.CouponStatus;
-import com.hwan.coupon.global.exception.BusinessException;
-import com.hwan.coupon.global.exception.ErrorCode;
+import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.domain.CouponStatus;
 
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 
 public record CouponCacheDto(
         Long id,
@@ -25,22 +22,5 @@ public record CouponCacheDto(
                 coupon.getIssueEndTime(),
                 coupon.getMinOrderAmount()
         );
-    }
-
-    public void validateForIssue() {
-        if (this.status == CouponStatus.INACTIVE) {
-            throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
-        }
-        if (LocalDateTime.now().isAfter(this.expiredAt)) {
-            throw new BusinessException(ErrorCode.COUPON_EXPIRED);
-        }
-        if (issueStartTime != null && issueEndTime != null) {
-            LocalTime now = LocalTime.now();
-            LocalTime start = LocalTime.parse(issueStartTime);
-            LocalTime end = LocalTime.parse(issueEndTime);
-            if (now.isBefore(start) || now.isAfter(end)) {
-                throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
-            }
-        }
     }
 }

@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 public enum CouponStatus {
     ACTIVE,     // 활성 (발급 가능)

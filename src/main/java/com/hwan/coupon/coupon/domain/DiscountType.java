@@ -1,4 +1,4 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.domain;
 
 public enum DiscountType {
     FIXED,  // 정액 할인 (예: 5,000원 할인)

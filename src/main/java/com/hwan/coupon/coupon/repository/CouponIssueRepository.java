@@ -1,6 +1,11 @@
-package com.hwan.coupon.coupon;
+package com.hwan.coupon.coupon.repository;
+
+import com.hwan.coupon.coupon.domain.CouponIssue;
+import com.hwan.coupon.coupon.domain.CouponIssueStatus;
 
 import com.hwan.coupon.coupon.dto.MonthlyStatsProjection;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -15,11 +20,11 @@ public interface CouponIssueRepository extends JpaRepository<CouponIssue, Long> 
 
     long countByCouponId(Long couponId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("DELETE FROM CouponIssue ci WHERE ci.couponId = :couponId")
     void deleteByCouponId(@Param("couponId") Long couponId);
 
-    List<CouponIssue> findAllByUserId(Long userId);
+    Page<CouponIssue> findAllByUserId(Long userId, Pageable pageable);
 
     @Query(value = """
             SELECT DATE_FORMAT(issued_at, '%Y-%m')                             AS month,
@@ -32,7 +37,9 @@ public interface CouponIssueRepository extends JpaRepository<CouponIssue, Long> 
             """, nativeQuery = true)
     List<MonthlyStatsProjection> findMonthlyStatsByYear(@Param("year") int year);
 
-    @Modifying
-    @Query("UPDATE CouponIssue ci SET ci.status = 'EXPIRED' WHERE ci.couponId IN :couponIds AND ci.status = 'ISSUED'")
-    int expireIssuedByCouponIds(@Param("couponIds") List<Long> couponIds);
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE CouponIssue ci SET ci.status = :toStatus WHERE ci.couponId IN :couponIds AND ci.status = :fromStatus")
+    int expireIssuedByCouponIds(@Param("couponIds") List<Long> couponIds,
+                                @Param("toStatus") CouponIssueStatus toStatus,
+                                @Param("fromStatus") CouponIssueStatus fromStatus);
 }
