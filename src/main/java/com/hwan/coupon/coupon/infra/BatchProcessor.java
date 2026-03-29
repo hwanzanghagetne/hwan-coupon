@@ -37,8 +37,6 @@ public class BatchProcessor {
         Long couponId = payload.couponId();
         List<Long> userIds = payload.userIds();
 
-        // 멱등성 체크 — 메시지 재전달 시 이미 완료/실패된 배치는 무시
-        // RabbitMQ는 ACK 전 크래시 시 같은 메시지를 재전달하므로 중복 처리 방지 필요
         CouponIssueBatch existing = batchRepository.findById(batchId).orElseThrow();
         if (existing.getStatus() == BatchStatus.DONE || existing.getStatus() == BatchStatus.FAILED) {
             log.warn("이미 처리된 배치 메시지 무시 batchId={} status={}", batchId, existing.getStatus());
@@ -47,27 +45,26 @@ public class BatchProcessor {
 
         log.info("배치 처리 시작 batchId={} couponId={} targetCount={}", batchId, couponId, userIds.size());
 
-        // 1단계: PROCESSING — 독립 트랜잭션으로 커밋
-        transactionTemplate.executeWithoutResult(status -> {
-            CouponIssueBatch batch = batchRepository.findById(batchId).orElseThrow();
-            batch.markProcessing();
-        });
+        int updated = transactionTemplate.execute(status ->
+                batchRepository.updateStatusIfMatch(batchId, BatchStatus.PENDING, BatchStatus.PROCESSING)
+        );
+        if (updated == 0) {
+            log.warn("배치 선점 실패 batchId={}", batchId);
+            return;
+        }
 
         try {
-            // 2단계: 1000건씩 청크로 나눠 bulk INSERT
             int actualInserted = 0;
             for (List<Long> chunk : partition(userIds, CHUNK_SIZE)) {
                 actualInserted += bulkInsert(couponId, chunk);
             }
             log.info("bulk INSERT 완료 batchId={} totalInserted={}", batchId, actualInserted);
 
-            // issued_quantity를 실제 INSERT된 건수만큼만 업데이트
             final int count = actualInserted;
             transactionTemplate.executeWithoutResult(status ->
                     couponRepository.incrementIssuedQuantityBy(couponId, count)
             );
 
-            // 3단계: DONE — 독립 트랜잭션으로 커밋
             transactionTemplate.executeWithoutResult(status -> {
                 CouponIssueBatch batch = batchRepository.findById(batchId).orElseThrow();
                 batch.markDone();
@@ -76,7 +73,6 @@ public class BatchProcessor {
 
         } catch (Exception e) {
             log.error("배치 처리 실패 batchId={} error={}", batchId, e.getMessage(), e);
-            // INSERT 실패 시 FAILED — 별도 트랜잭션이므로 롤백 영향 없음
             transactionTemplate.executeWithoutResult(status -> {
                 CouponIssueBatch batch = batchRepository.findById(batchId).orElseThrow();
                 batch.markFailed();
