@@ -21,7 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -42,25 +41,23 @@ public class CouponService {
     private final CouponIssueRepository couponIssueRepository;
     private final CouponRedisService couponRedisService;
     private final CouponCacheService couponCacheService;
-    private final TransactionTemplate transactionTemplate;
+    private final CouponIssueWriter couponIssueWriter;
 
     public CouponResponse createCoupon(CreateCouponRequest request) {
-        // DB 커밋과 Redis 초기화를 분리 — @Transactional은 메서드 끝에서 커밋하므로
-        // 커밋 전에 Redis에 재고가 세팅될 수 있음. DB 롤백 시 Redis만 남는 불일치 방지.
-        Coupon saved = transactionTemplate.execute(status -> {
-            Coupon coupon = Coupon.create(
-                    request.name(),
-                    request.discountType(),
-                    request.discountValue(),
-                    request.totalQuantity(),
-                    request.minOrderAmount(),
-                    request.issueType(),
-                    request.issueStartTime(),
-                    request.issueEndTime(),
-                    request.expiredAt()
-            );
-            return couponRepository.save(coupon);
-        });
+        Coupon coupon = Coupon.create(
+                request.name(),
+                request.discountType(),
+                request.discountValue(),
+                request.totalQuantity(),
+                request.minOrderAmount(),
+                request.issueType(),
+                request.issueStartTime(),
+                request.issueEndTime(),
+                request.expiredAt()
+        );
+        // DB 커밋과 Redis 초기화를 분리 — DB 커밋 완료 후 Redis 초기화해야
+        // DB 롤백 시 Redis에만 재고 키가 남는 불일치를 방지할 수 있음
+        Coupon saved = couponIssueWriter.saveCoupon(coupon);
         log.info("쿠폰 생성 완료 couponId={} name={} issueType={}", saved.getId(), saved.getName(), saved.getIssueType());
 
         // DB 커밋 완료 후 Redis 초기화 — 이 시점에 실패해도 issueCoupon()의 syncStockIfAbsent가 복구
@@ -98,21 +95,11 @@ public class CouponService {
         log.info("쿠폰 발급 성공 couponId={} userId={} remaining={}", couponId, userId, remaining);
 
         try {
-            return transactionTemplate.execute(status -> {
-                try {
-                    CouponIssue couponIssue = CouponIssue.create(couponId, userId);
-                    couponIssueRepository.save(couponIssue);
-                    couponRepository.incrementIssuedQuantity(couponId);
-                    if (remaining == 0) {
-                        couponRepository.markExhausted(couponId, CouponStatus.EXHAUSTED);
-                        couponCacheService.evict(couponId);
-                    }
-                    return CouponIssueResponse.from(couponIssue);
-                } catch (DataIntegrityViolationException e) {
-                    couponRedisService.rollbackStockOnly(couponId);
-                    throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
-                }
-            });
+            return couponIssueWriter.saveIssue(couponId, userId, remaining);
+        } catch (DataIntegrityViolationException e) {
+            // Redis 차감은 성공했으나 DB UNIQUE 제약 위반 → 재고만 복구
+            couponRedisService.rollbackStockOnly(couponId);
+            throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
