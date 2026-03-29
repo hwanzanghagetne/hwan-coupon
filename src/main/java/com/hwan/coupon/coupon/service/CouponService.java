@@ -55,12 +55,9 @@ public class CouponService {
                 request.issueEndTime(),
                 request.expiredAt()
         );
-        // DB 커밋과 Redis 초기화를 분리 — DB 커밋 완료 후 Redis 초기화해야
-        // DB 롤백 시 Redis에만 재고 키가 남는 불일치를 방지할 수 있음
         Coupon saved = couponIssueWriter.saveCoupon(coupon);
         log.info("쿠폰 생성 완료 couponId={} name={} issueType={}", saved.getId(), saved.getName(), saved.getIssueType());
 
-        // DB 커밋 완료 후 Redis 초기화 — 이 시점에 실패해도 issueCoupon()의 syncStockIfAbsent가 복구
         if (saved.getIssueType() == IssueType.FIRST_COME && saved.getTotalQuantity() != null) {
             couponRedisService.initStock(saved.getId(), saved.getTotalQuantity());
             log.info("Redis 재고 초기화 couponId={} totalQuantity={}", saved.getId(), saved.getTotalQuantity());
@@ -73,7 +70,6 @@ public class CouponService {
         CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
         validateCouponForIssue(cached);
 
-        // Redis 키 유실 시 DB 기준으로 재고 복구 (DB가 source of truth)
         if (!couponRedisService.hasStock(couponId)) {
             Coupon coupon = couponRepository.findById(couponId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
@@ -97,7 +93,6 @@ public class CouponService {
         try {
             return couponIssueWriter.saveIssue(couponId, userId, remaining);
         } catch (DataIntegrityViolationException e) {
-            // Redis 차감은 성공했으나 DB UNIQUE 제약 위반 → 재고만 복구
             couponRedisService.rollbackStockOnly(couponId);
             throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
         } catch (BusinessException e) {
@@ -110,8 +105,6 @@ public class CouponService {
 
     @Transactional
     public CouponIssueResponse useCoupon(Long couponId, Long userId, int orderAmount) {
-        // 만료 체크는 실제 돈이 오가는 행위이므로 캐시가 아닌 DB 기준으로 확인
-        // 캐시 TTL(10분) 동안 만료된 쿠폰이 사용되는 것을 방지
         Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
 
@@ -166,7 +159,6 @@ public class CouponService {
         int updated = couponRepository.markInactive(couponId, CouponStatus.INACTIVE, CouponStatus.ACTIVE);
 
         if (updated == 0) {
-            // 업데이트된 행이 없음 → 쿠폰이 없거나 이미 비활성 상태
             couponRepository.findById(couponId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
             throw new BusinessException(ErrorCode.COUPON_ALREADY_INACTIVE);
