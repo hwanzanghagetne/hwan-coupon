@@ -51,8 +51,8 @@ class CouponIssueConcurrencyTest {
 
     @AfterEach
     void tearDown() {
-        couponIssueRepository.deleteAll();
-        couponRepository.deleteAll();
+        couponIssueRepository.deleteByCouponId(couponId);
+        couponRepository.deleteById(couponId);
     }
 
     @Test
