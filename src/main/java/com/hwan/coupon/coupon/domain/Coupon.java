@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @Entity
 @Table(name = "coupon")
@@ -37,11 +38,9 @@ public class Coupon {
     @Column(nullable = false)
     private IssueType issueType;
 
-    @Column(length = 10)
-    private String issueStartTime;
+    private LocalTime issueStartTime;
 
-    @Column(length = 10)
-    private String issueEndTime;
+    private LocalTime issueEndTime;
 
     @Column(nullable = false)
     private LocalDateTime expiredAt;
@@ -55,7 +54,7 @@ public class Coupon {
 
     public static Coupon create(String name, DiscountType discountType, int discountValue,
                                 Integer totalQuantity, Integer minOrderAmount, IssueType issueType,
-                                String issueStartTime, String issueEndTime,
+                                LocalTime issueStartTime, LocalTime issueEndTime,
                                 LocalDateTime expiredAt) {
         Coupon coupon = new Coupon();
         coupon.name = name;

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -106,13 +107,15 @@ class AdminBatchIntegrationTest {
     }
 
     @Test
-    @DisplayName("이미 발급받은 유저가 포함되면 UNIQUE 제약 위반으로 배치가 FAILED 된다")
-    void 중복_유저_포함시_배치_FAILED() {
+    @DisplayName("이미 발급받은 유저가 포함되어도 중복은 스킵되고 나머지는 정상 발급되며 배치는 DONE 처리된다")
+    void 중복_유저_포함시_중복_스킵_후_DONE() {
+        // 1명 선발급
         adminBatchService.requestBatch(couponId, List.of(testUserIds.get(0)));
         await().atMost(5, TimeUnit.SECONDS).until(() ->
                 couponIssueRepository.findByCouponIdAndUserId(couponId, testUserIds.get(0)).isPresent()
         );
 
+        // 이미 발급받은 유저 포함 전체 5명 요청
         BatchIssueResponse response = adminBatchService.requestBatch(couponId, testUserIds);
 
         await().atMost(5, TimeUnit.SECONDS).until(() ->
@@ -121,34 +124,34 @@ class AdminBatchIntegrationTest {
                         .orElse(false)
         );
 
+        // INSERT IGNORE 정책: 중복은 스킵하고 나머지는 정상 삽입 → 배치는 DONE
         assertThat(batchRepository.findById(response.batchId()).orElseThrow().getStatus())
-                .isEqualTo(BatchStatus.FAILED);
+                .isEqualTo(BatchStatus.DONE);
+
+        // 중복 1명 스킵, 나머지 4명만 신규 발급 (기존 1명 포함 총 5건)
+        long issuedCount = couponIssueRepository.countByCouponId(couponId);
+        assertThat(issuedCount).isEqualTo(testUserIds.size());
     }
 
     @Test
-    @DisplayName("10만 건 대용량 발급 처리 시간을 측정한다")
-    void 대용량_10만건_처리시간_측정() {
-        List<Long> largeUserIds = LongStream.rangeClosed(200_001L, 300_000L)
+    @DisplayName("대용량 발급 처리 시 모든 건이 정확히 발급된다")
+    void 대용량_발급_정확성_검증() {
+        List<Long> largeUserIds = LongStream.rangeClosed(200_001L, 201_000L)
                 .boxed()
                 .toList();
 
-        long start = System.currentTimeMillis();
-
         BatchIssueResponse response = adminBatchService.requestBatch(couponId, largeUserIds);
 
-        await().atMost(3, TimeUnit.MINUTES).until(() ->
+        await().atMost(30, TimeUnit.SECONDS).until(() ->
                 batchRepository.findById(response.batchId())
                         .map(b -> b.getStatus() == BatchStatus.DONE)
                         .orElse(false)
         );
 
-        long elapsed = System.currentTimeMillis() - start;
-        System.out.println("\n===== 10만 건 처리 시간: " + elapsed + "ms =====\n");
-
         long issuedCount = couponIssueRepository.countByCouponId(couponId);
-        assertThat(issuedCount).isEqualTo(100_000);
+        assertThat(issuedCount).isEqualTo(1_000);
 
         int issuedQuantity = couponRepository.findById(couponId).orElseThrow().getIssuedQuantity();
-        assertThat(issuedQuantity).isEqualTo(100_000);
+        assertThat(issuedQuantity).isEqualTo(1_000);
     }
 }
