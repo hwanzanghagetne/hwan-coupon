@@ -5,10 +5,10 @@ import com.hwan.coupon.global.exception.ErrorCode;
 import com.hwan.coupon.member.dto.SignupRequest;
 import com.hwan.coupon.member.dto.SignupResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -32,12 +32,15 @@ public class MemberService {
                 request.name(),
                 request.birthdate(),
                 request.phone(),
-                Role.USER,
-                LocalDateTime.now()
+                Role.USER
         );
 
-        Member saved = memberRepository.save(member);
-
-        return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName());
+        try {
+            Member saved = memberRepository.save(member);
+            return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName());
+        } catch (DataIntegrityViolationException e) {
+            // existsByEmail 체크 이후 동시 가입 요청으로 UNIQUE 제약 위반 발생 시
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        }
     }
 }

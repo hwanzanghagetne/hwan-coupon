@@ -49,3 +49,6 @@ scripts/
 
 ### Claude Code ###
 .claude/
+
+### JVM Heap Dumps ###
+*.hprof

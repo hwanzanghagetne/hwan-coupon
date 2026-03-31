@@ -8,6 +8,7 @@ import com.hwan.coupon.coupon.repository.CouponRepository;
 import com.hwan.coupon.coupon.service.CouponService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,7 +40,7 @@ class CouponIssueConcurrencyTest {
                 "동시성테스트쿠폰",
                 DiscountType.FIXED,
                 1000,
-                500,
+                50,
                 null,
                 IssueType.FIRST_COME,
                 null,
@@ -56,8 +57,10 @@ class CouponIssueConcurrencyTest {
     }
 
     @Test
-    void 동시에_100명_발급요청() throws InterruptedException {
+    @DisplayName("재고(50)보다 많은 100명이 동시에 요청해도 정확히 50건만 발급된다")
+    void 동시에_100명_발급요청_재고초과_방지() throws InterruptedException {
         int threadCount = 100;
+        int totalQuantity = 50;
         ExecutorService executor = Executors.newFixedThreadPool(32);
         CountDownLatch latch = new CountDownLatch(threadCount);
 
@@ -77,12 +80,9 @@ class CouponIssueConcurrencyTest {
         executor.shutdown();
 
         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
-        long issueCount = couponIssueRepository.count();
+        long issueCount = couponIssueRepository.countByCouponId(couponId);
 
-        System.out.println("실제 issued_quantity: " + coupon.getIssuedQuantity());
-        System.out.println("실제 coupon_issue 수: " + issueCount);
-
-        assertThat(coupon.getIssuedQuantity()).isEqualTo(100);
-        assertThat(issueCount).isEqualTo(100);
+        assertThat(coupon.getIssuedQuantity()).isEqualTo(totalQuantity);
+        assertThat(issueCount).isEqualTo(totalQuantity);
     }
 }

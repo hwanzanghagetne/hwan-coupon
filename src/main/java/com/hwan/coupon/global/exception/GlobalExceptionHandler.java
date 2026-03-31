@@ -3,6 +3,7 @@ package com.hwan.coupon.global.exception;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -49,6 +50,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(400)
                 .body(new ErrorResponse(400, message));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        return ResponseEntity
+                .status(400)
+                .body(new ErrorResponse(400, "요청 값의 형식이 올바르지 않습니다. 시간은 HH:mm 형식으로 입력해주세요"));
     }
 
     @ExceptionHandler(Exception.class)

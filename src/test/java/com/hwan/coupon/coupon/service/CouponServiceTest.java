@@ -18,15 +18,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.support.TransactionCallback;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,7 +47,7 @@ class CouponServiceTest {
     private CouponCacheService couponCacheService;
 
     @Mock
-    private TransactionTemplate transactionTemplate;
+    private CouponIssueWriter couponIssueWriter;
 
     // ---- issueCoupon ----
 
@@ -95,7 +93,7 @@ class CouponServiceTest {
         CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
-        when(couponRedisService.tryIssue(1L, 1L)).thenReturn(-1L);
+        when(couponRedisService.tryIssue(1L, 1L)).thenReturn(-1L); // REDIS_RESULT_EXHAUSTED
 
         assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
                 .isInstanceOf(BusinessException.class)
@@ -109,7 +107,7 @@ class CouponServiceTest {
         CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
-        when(couponRedisService.tryIssue(1L, 1L)).thenReturn(-2L);
+        when(couponRedisService.tryIssue(1L, 1L)).thenReturn(-2L); // REDIS_RESULT_ALREADY_ISSUED
 
         assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
                 .isInstanceOf(BusinessException.class)
@@ -121,13 +119,12 @@ class CouponServiceTest {
     @DisplayName("정상 발급 시 CouponIssueResponse를 반환한다")
     void issueCoupon_성공() {
         CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
+        CouponIssueResponse expected = new CouponIssueResponse(null, 1L, 1L, CouponIssueStatus.ISSUED, LocalDateTime.now());
+
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
         when(couponRedisService.tryIssue(1L, 1L)).thenReturn(5L);
-        when(transactionTemplate.execute(any())).thenAnswer(inv -> {
-            TransactionCallback<?> callback = inv.getArgument(0);
-            return callback.doInTransaction(null);
-        });
+        when(couponIssueWriter.saveIssue(anyLong(), anyLong(), anyLong())).thenReturn(expected);
 
         CouponIssueResponse response = couponService.issueCoupon(1L, 1L);
 
