@@ -46,6 +46,7 @@ public class CouponService {
     private final CouponCacheService couponCacheService;
     private final CouponIssueWriter couponIssueWriter;
 
+    @Transactional
     public CouponResponse createCoupon(CreateCouponRequest request) {
         Coupon coupon = Coupon.create(
                 request.name(),
@@ -58,7 +59,7 @@ public class CouponService {
                 request.issueEndTime(),
                 request.expiredAt()
         );
-        Coupon saved = couponIssueWriter.saveCoupon(coupon);
+        Coupon saved = couponRepository.save(coupon);
         log.info("쿠폰 생성 완료 couponId={} name={} issueType={}", saved.getId(), saved.getName(), saved.getIssueType());
 
         if (saved.getIssueType() == IssueType.FIRST_COME && saved.getTotalQuantity() != null) {

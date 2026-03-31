@@ -22,6 +22,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -150,7 +152,8 @@ class CouponServiceTest {
     @DisplayName("만료된 쿠폰 사용 시 COUPON_EXPIRED 예외가 발생한다")
     void useCoupon_만료쿠폰() {
         Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().minusDays(1));
+                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1));
+        ReflectionTestUtils.setField(coupon, "expiredAt", LocalDateTime.now().minusDays(1));
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
 
         assertThatThrownBy(() -> couponService.useCoupon(1L, 1L, 10000))
