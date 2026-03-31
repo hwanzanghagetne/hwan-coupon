@@ -12,6 +12,9 @@ public enum ErrorCode {
     EMAIL_ALREADY_EXISTS(409, "이미 사용 중인 이메일입니다"),
 
     // Coupon
+    COUPON_INVALID_DISCOUNT_VALUE(400, "할인값은 1 이상이어야 하며, 정률 할인은 100% 이하여야 합니다"),
+    COUPON_INVALID_EXPIRED_AT(400, "만료일은 현재 시각 이후여야 합니다"),
+    COUPON_INVALID_ISSUE_TIME(400, "발급 시작 시간은 종료 시간보다 이전이어야 합니다"),
     COUPON_NOT_FOUND(404, "쿠폰을 찾을 수 없습니다"),
     COUPON_ISSUE_NOT_FOUND(404, "쿠폰 발급 내역을 찾을 수 없습니다"),
     COUPON_NOT_ACTIVE(400, "비활성화된 쿠폰입니다"),
