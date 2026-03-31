@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -45,8 +44,7 @@ public class Member {
     private LocalDateTime updatedAt;
 
     public static Member create(String email, String password, String name,
-                                LocalDate birthdate, String phone, Role role,
-                                LocalDateTime now) {
+                                LocalDate birthdate, String phone, Role role) {
         Member member = new Member();
         member.email = email;
         member.password = password;
@@ -54,8 +52,14 @@ public class Member {
         member.birthdate = birthdate;
         member.phone = phone;
         member.role = role;
+        LocalDateTime now = LocalDateTime.now();
         member.createdAt = now;
         member.updatedAt = now;
         return member;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

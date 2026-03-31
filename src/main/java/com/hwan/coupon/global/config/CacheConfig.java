@@ -19,7 +19,7 @@ public class CacheConfig {
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         JacksonJsonRedisSerializer<CouponCacheDto> serializer =
-                new JacksonJsonRedisSerializer<>(JsonMapper.builder().build(), CouponCacheDto.class);
+                new JacksonJsonRedisSerializer<>(JsonMapper.builder().findAndAddModules().build(), CouponCacheDto.class);
 
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(10))

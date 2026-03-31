@@ -37,6 +37,9 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 public class CouponService {
 
+    private static final long REDIS_RESULT_EXHAUSTED      = -1L;
+    private static final long REDIS_RESULT_ALREADY_ISSUED = -2L;
+
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
     private final CouponRedisService couponRedisService;
@@ -80,11 +83,11 @@ public class CouponService {
         }
 
         long remaining = couponRedisService.tryIssue(couponId, userId);
-        if (remaining == -1) {
+        if (remaining == REDIS_RESULT_EXHAUSTED) {
             log.warn("쿠폰 소진 couponId={} userId={}", couponId, userId);
             throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
         }
-        if (remaining == -2) {
+        if (remaining == REDIS_RESULT_ALREADY_ISSUED) {
             log.warn("중복 발급 시도 couponId={} userId={}", couponId, userId);
             throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
         }
@@ -141,7 +144,10 @@ public class CouponService {
 
     @Transactional(readOnly = true)
     public List<MonthlyStatsResponse> getMonthlyStats(int year) {
-        Map<String, MonthlyStatsResponse> statsMap = couponIssueRepository.findMonthlyStatsByYear(year)
+        LocalDateTime start = LocalDateTime.of(year, 1, 1, 0, 0, 0);
+        LocalDateTime end   = LocalDateTime.of(year + 1, 1, 1, 0, 0, 0);
+
+        Map<String, MonthlyStatsResponse> statsMap = couponIssueRepository.findMonthlyStatsByYear(start, end)
                 .stream()
                 .collect(Collectors.toMap(
                         MonthlyStatsProjection::getMonth,
@@ -191,9 +197,7 @@ public class CouponService {
         }
         if (cached.issueStartTime() != null && cached.issueEndTime() != null) {
             LocalTime now = LocalTime.now();
-            LocalTime start = LocalTime.parse(cached.issueStartTime());
-            LocalTime end = LocalTime.parse(cached.issueEndTime());
-            if (now.isBefore(start) || now.isAfter(end)) {
+            if (now.isBefore(cached.issueStartTime()) || now.isAfter(cached.issueEndTime())) {
                 throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
             }
         }

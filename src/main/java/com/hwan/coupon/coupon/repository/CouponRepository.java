@@ -18,8 +18,8 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     void incrementIssuedQuantity(@Param("couponId") Long couponId);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :status WHERE c.id = :couponId")
-    void markExhausted(@Param("couponId") Long couponId, @Param("status") CouponStatus status);
+    @Query("UPDATE Coupon c SET c.status = :status WHERE c.id = :couponId AND c.status = 'ACTIVE'")
+    int markExhausted(@Param("couponId") Long couponId, @Param("status") CouponStatus status);
 
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + :count WHERE c.id = :couponId")

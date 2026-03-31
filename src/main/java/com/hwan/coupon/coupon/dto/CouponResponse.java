@@ -1,10 +1,12 @@
 package com.hwan.coupon.coupon.dto;
 
+import tools.jackson.annotation.JsonFormat;
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public record CouponResponse(
         Long id,
@@ -15,8 +17,8 @@ public record CouponResponse(
         int issuedQuantity,
         Integer minOrderAmount,
         IssueType issueType,
-        String issueStartTime,
-        String issueEndTime,
+        @JsonFormat(pattern = "HH:mm") LocalTime issueStartTime,
+        @JsonFormat(pattern = "HH:mm") LocalTime issueEndTime,
         LocalDateTime expiredAt,
         CouponStatus status,
         LocalDateTime createdAt

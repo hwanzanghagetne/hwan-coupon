@@ -4,13 +4,14 @@ import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public record CouponCacheDto(
         Long id,
         CouponStatus status,
         LocalDateTime expiredAt,
-        String issueStartTime,
-        String issueEndTime,
+        LocalTime issueStartTime,
+        LocalTime issueEndTime,
         Integer minOrderAmount
 ) {
     public static CouponCacheDto from(Coupon coupon) {

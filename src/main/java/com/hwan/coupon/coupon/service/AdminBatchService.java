@@ -50,7 +50,7 @@ public class AdminBatchService {
                 RabbitMQConfig.ROUTING_KEY,
                 new BatchMessagePayload(saved.getId(), couponId, uniqueUserIds)
         );
-        log.info("배치 메시지 발행 batchId={} couponId={} targetCount={}", saved.getId(), couponId, userIds.size());
+        log.info("배치 메시지 발행 batchId={} couponId={} targetCount={}", saved.getId(), couponId, saved.getTargetCount());
 
         return BatchIssueResponse.from(saved);
     }
