@@ -1,6 +1,6 @@
 package com.hwan.coupon.coupon.dto;
 
-import tools.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;

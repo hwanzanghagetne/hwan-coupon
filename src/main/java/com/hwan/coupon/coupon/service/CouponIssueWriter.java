@@ -1,6 +1,5 @@
 package com.hwan.coupon.coupon.service;
 
-import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponIssue;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
@@ -11,8 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * DB 쓰기 작업을 담당하는 컴포넌트.
- * CouponService에서 Redis 호출 이후 DB 저장이 필요한 시점에 호출된다.
+ * 쿠폰 발급 이력 DB 쓰기를 담당하는 컴포넌트.
  *
  * 별도 클래스로 분리한 이유:
  * issueCoupon 흐름에서 Redis tryIssue(재고 차감)는 트랜잭션 밖에서 실행해야 한다.
@@ -27,11 +25,6 @@ public class CouponIssueWriter {
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
     private final CouponCacheService couponCacheService;
-
-    @Transactional
-    public Coupon saveCoupon(Coupon coupon) {
-        return couponRepository.save(coupon);
-    }
 
     @Transactional
     public CouponIssueResponse saveIssue(Long couponId, Long userId, long remaining) {

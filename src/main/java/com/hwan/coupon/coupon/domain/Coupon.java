@@ -1,5 +1,7 @@
 package com.hwan.coupon.coupon.domain;
 
+import com.hwan.coupon.global.exception.BusinessException;
+import com.hwan.coupon.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -56,6 +58,10 @@ public class Coupon {
                                 Integer totalQuantity, Integer minOrderAmount, IssueType issueType,
                                 LocalTime issueStartTime, LocalTime issueEndTime,
                                 LocalDateTime expiredAt) {
+        validateDiscountValue(discountType, discountValue);
+        validateExpiredAt(expiredAt);
+        validateIssueTime(issueStartTime, issueEndTime);
+
         Coupon coupon = new Coupon();
         coupon.name = name;
         coupon.discountType = discountType;
@@ -70,5 +76,27 @@ public class Coupon {
         coupon.status = CouponStatus.ACTIVE;
         coupon.createdAt = LocalDateTime.now();
         return coupon;
+    }
+
+    private static void validateDiscountValue(DiscountType discountType, int discountValue) {
+        if (discountValue <= 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_DISCOUNT_VALUE);
+        }
+        if (discountType == DiscountType.RATE && discountValue > 100) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_DISCOUNT_VALUE);
+        }
+    }
+
+    private static void validateExpiredAt(LocalDateTime expiredAt) {
+        if (!expiredAt.isAfter(LocalDateTime.now())) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_EXPIRED_AT);
+        }
+    }
+
+    private static void validateIssueTime(LocalTime issueStartTime, LocalTime issueEndTime) {
+        if (issueStartTime != null && issueEndTime != null
+                && !issueStartTime.isBefore(issueEndTime)) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_ISSUE_TIME);
+        }
     }
 }
