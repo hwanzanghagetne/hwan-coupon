@@ -187,6 +187,9 @@ public class CouponService {
     }
 
     private void validateCouponForIssue(CouponCacheDto cached) {
+        if (cached.issueType() != IssueType.FIRST_COME) {
+            throw new BusinessException(ErrorCode.COUPON_NOT_DIRECTLY_ISSUABLE);
+        }
         if (cached.status() == CouponStatus.INACTIVE) {
             throw new BusinessException(ErrorCode.COUPON_NOT_ACTIVE);
         }
