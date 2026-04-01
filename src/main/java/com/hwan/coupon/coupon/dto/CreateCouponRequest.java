@@ -33,14 +33,10 @@ public record CreateCouponRequest(
         @NotNull
         LocalDateTime expiredAt
 ) {
-    @AssertTrue(message = "발급 시작/종료 시간은 둘 다 입력하거나 둘 다 비워야 합니다")
-    public boolean isIssueTimePresenceValid() {
-        return (issueStartTime == null) == (issueEndTime == null);
-    }
-
-    @AssertTrue(message = "발급 시작 시간은 종료 시간보다 이전이어야 합니다")
-    public boolean isIssueTimeOrderValid() {
-        if (issueStartTime == null || issueEndTime == null) return true;
+    @AssertTrue(message = "발급 시작/종료 시간은 둘 다 입력하거나 둘 다 비워야 하며, 시작은 종료보다 이전이어야 합니다")
+    public boolean isIssueTimeValid() {
+        if ((issueStartTime == null) != (issueEndTime == null)) return false;
+        if (issueStartTime == null) return true;
         return issueStartTime.isBefore(issueEndTime);
     }
 }

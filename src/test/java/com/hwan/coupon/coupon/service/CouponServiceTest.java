@@ -6,6 +6,7 @@ import com.hwan.coupon.coupon.domain.CouponIssueStatus;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
+import static com.hwan.coupon.coupon.domain.IssueType.FIRST_COME;
 import com.hwan.coupon.coupon.dto.CouponCacheDto;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
@@ -54,9 +55,21 @@ class CouponServiceTest {
     // ---- issueCoupon ----
 
     @Test
+    @DisplayName("ADMIN_ISSUED 쿠폰 직접 발급 시 COUPON_NOT_DIRECTLY_ISSUABLE 예외가 발생한다")
+    void issueCoupon_관리자발급전용쿠폰() {
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, IssueType.ADMIN_ISSUED, LocalDateTime.now().plusDays(1), null, null, null);
+        when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
+
+        assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_NOT_DIRECTLY_ISSUABLE);
+    }
+
+    @Test
     @DisplayName("비활성 쿠폰 발급 시 COUPON_NOT_ACTIVE 예외가 발생한다")
     void issueCoupon_비활성쿠폰() {
-        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.INACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.INACTIVE, IssueType.FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
 
         assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
@@ -68,7 +81,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("소진된 쿠폰 발급 시 COUPON_EXHAUSTED 예외가 발생한다")
     void issueCoupon_소진쿠폰() {
-        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.EXHAUSTED, LocalDateTime.now().plusDays(1), null, null, null);
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.EXHAUSTED, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
 
         assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
@@ -80,7 +93,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("만료된 쿠폰 발급 시 COUPON_EXPIRED 예외가 발생한다")
     void issueCoupon_만료쿠폰() {
-        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().minusDays(1), null, null, null);
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().minusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
 
         assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
@@ -92,7 +105,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("Redis 재고 소진 시 COUPON_EXHAUSTED 예외가 발생한다")
     void issueCoupon_Redis재고소진() {
-        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
         when(couponRedisService.tryIssue(1L, 1L)).thenReturn(-1L); // REDIS_RESULT_EXHAUSTED
@@ -106,7 +119,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("중복 발급 시도 시 COUPON_ALREADY_ISSUED 예외가 발생한다")
     void issueCoupon_중복발급() {
-        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
         when(couponRedisService.tryIssue(1L, 1L)).thenReturn(-2L); // REDIS_RESULT_ALREADY_ISSUED
@@ -120,7 +133,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("정상 발급 시 CouponIssueResponse를 반환한다")
     void issueCoupon_성공() {
-        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, LocalDateTime.now().plusDays(1), null, null, null);
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
         CouponIssueResponse expected = new CouponIssueResponse(null, 1L, 1L, CouponIssueStatus.ISSUED, LocalDateTime.now());
 
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
