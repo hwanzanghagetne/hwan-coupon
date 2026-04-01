@@ -59,6 +59,8 @@ public class Coupon {
                                 LocalTime issueStartTime, LocalTime issueEndTime,
                                 LocalDateTime expiredAt) {
         validateDiscountValue(discountType, discountValue);
+        validateQuantity(totalQuantity);
+        validateMinOrderAmount(minOrderAmount);
         validateExpiredAt(expiredAt);
         validateIssueTime(issueStartTime, issueEndTime);
 
@@ -87,6 +89,18 @@ public class Coupon {
         }
     }
 
+    private static void validateQuantity(Integer totalQuantity) {
+        if (totalQuantity != null && totalQuantity <= 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_QUANTITY);
+        }
+    }
+
+    private static void validateMinOrderAmount(Integer minOrderAmount) {
+        if (minOrderAmount != null && minOrderAmount <= 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_MIN_ORDER_AMOUNT);
+        }
+    }
+
     private static void validateExpiredAt(LocalDateTime expiredAt) {
         if (!expiredAt.isAfter(LocalDateTime.now())) {
             throw new BusinessException(ErrorCode.COUPON_INVALID_EXPIRED_AT);
@@ -94,8 +108,12 @@ public class Coupon {
     }
 
     private static void validateIssueTime(LocalTime issueStartTime, LocalTime issueEndTime) {
-        if (issueStartTime != null && issueEndTime != null
-                && !issueStartTime.isBefore(issueEndTime)) {
+        boolean startPresent = issueStartTime != null;
+        boolean endPresent = issueEndTime != null;
+        if (startPresent != endPresent) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID_ISSUE_TIME);
+        }
+        if (startPresent && !issueStartTime.isBefore(issueEndTime)) {
             throw new BusinessException(ErrorCode.COUPON_INVALID_ISSUE_TIME);
         }
     }

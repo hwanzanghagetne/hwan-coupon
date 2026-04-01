@@ -25,6 +25,46 @@ class CouponTest {
         assertThat(coupon.getCreatedAt()).isNotNull();
     }
 
+    // ---- totalQuantity 검증 ----
+
+    @Test
+    @DisplayName("totalQuantity가 0이면 COUPON_INVALID_QUANTITY 예외가 발생한다")
+    void create_수량_0() {
+        assertThatThrownBy(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, 0, null,
+                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_INVALID_QUANTITY);
+    }
+
+    @Test
+    @DisplayName("totalQuantity가 null이면 무제한으로 정상 생성된다")
+    void create_수량_null_무제한() {
+        assertThatCode(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
+                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                .doesNotThrowAnyException();
+    }
+
+    // ---- minOrderAmount 검증 ----
+
+    @Test
+    @DisplayName("minOrderAmount가 0이면 COUPON_INVALID_MIN_ORDER_AMOUNT 예외가 발생한다")
+    void create_최소주문금액_0() {
+        assertThatThrownBy(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, 0,
+                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_INVALID_MIN_ORDER_AMOUNT);
+    }
+
+    @Test
+    @DisplayName("minOrderAmount가 null이면 조건 없음으로 정상 생성된다")
+    void create_최소주문금액_null() {
+        assertThatCode(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
+                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                .doesNotThrowAnyException();
+    }
+
     // ---- discountValue 검증 ----
 
     @Test
@@ -110,10 +150,12 @@ class CouponTest {
     }
 
     @Test
-    @DisplayName("issueStartTime만 있고 issueEndTime이 null이면 정상 생성된다")
+    @DisplayName("issueStartTime만 있고 issueEndTime이 null이면 COUPON_INVALID_ISSUE_TIME 예외가 발생한다")
     void create_발급시간_start만_있음() {
-        assertThatCode(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
+        assertThatThrownBy(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
                 IssueType.FIRST_COME, LocalTime.of(10, 0), null, LocalDateTime.now().plusDays(1)))
-                .doesNotThrowAnyException();
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_INVALID_ISSUE_TIME);
     }
 }
