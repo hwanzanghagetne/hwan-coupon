@@ -63,6 +63,7 @@ public class Coupon {
         validateMinOrderAmount(minOrderAmount);
         validateExpiredAt(expiredAt);
         validateIssueTime(issueStartTime, issueEndTime);
+        validateIssueTypeAndQuantity(issueType, totalQuantity);
 
         Coupon coupon = new Coupon();
         coupon.name = name;
@@ -115,6 +116,12 @@ public class Coupon {
         }
         if (startPresent && !issueStartTime.isBefore(issueEndTime)) {
             throw new BusinessException(ErrorCode.COUPON_INVALID_ISSUE_TIME);
+        }
+    }
+
+    private static void validateIssueTypeAndQuantity(IssueType issueType, Integer totalQuantity) {
+        if (issueType == IssueType.FIRST_COME && totalQuantity == null) {
+            throw new BusinessException(ErrorCode.COUPON_FIRST_COME_REQUIRES_QUANTITY);
         }
     }
 }

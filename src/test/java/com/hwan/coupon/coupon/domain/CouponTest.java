@@ -17,7 +17,7 @@ class CouponTest {
     @Test
     @DisplayName("정상 조건으로 생성된 쿠폰은 ACTIVE 상태이다")
     void create_정상_ACTIVE() {
-        Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
+        Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, 100, null,
                 IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1));
 
         assertThat(coupon.getStatus()).isEqualTo(CouponStatus.ACTIVE);
@@ -38,11 +38,21 @@ class CouponTest {
     }
 
     @Test
-    @DisplayName("totalQuantity가 null이면 무제한으로 정상 생성된다")
-    void create_수량_null_무제한() {
+    @DisplayName("ADMIN_ISSUED는 totalQuantity가 null이어도 정상 생성된다")
+    void create_수량_null_관리자발급_무제한() {
         assertThatCode(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1)))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("FIRST_COME은 totalQuantity가 null이면 COUPON_FIRST_COME_REQUIRES_QUANTITY 예외가 발생한다")
+    void create_선착순_수량_null_예외() {
+        assertThatThrownBy(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
+                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_FIRST_COME_REQUIRES_QUANTITY);
     }
 
     // ---- minOrderAmount 검증 ----
@@ -61,7 +71,7 @@ class CouponTest {
     @DisplayName("minOrderAmount가 null이면 조건 없음으로 정상 생성된다")
     void create_최소주문금액_null() {
         assertThatCode(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1)))
                 .doesNotThrowAnyException();
     }
 
@@ -91,7 +101,7 @@ class CouponTest {
     @DisplayName("RATE 타입에서 discountValue가 100이면 정상 생성된다")
     void create_정률_100_정상() {
         assertThatCode(() -> Coupon.create("테스트", DiscountType.RATE, 100, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1)))
                 .doesNotThrowAnyException();
     }
 
@@ -109,7 +119,7 @@ class CouponTest {
     @DisplayName("FIXED 타입에서 discountValue가 101이면 정상 생성된다")
     void create_정액_101_정상() {
         assertThatCode(() -> Coupon.create("테스트", DiscountType.FIXED, 101, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1)))
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1)))
                 .doesNotThrowAnyException();
     }
 

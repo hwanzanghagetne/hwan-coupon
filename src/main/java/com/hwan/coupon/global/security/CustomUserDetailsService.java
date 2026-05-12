@@ -1,7 +1,5 @@
 package com.hwan.coupon.global.security;
 
-import com.hwan.coupon.global.exception.BusinessException;
-import com.hwan.coupon.global.exception.ErrorCode;
 import com.hwan.coupon.member.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,6 +17,6 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         return memberRepository.findByEmail(email)
                 .map(CustomUserDetails::new)
-                .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+                .orElseThrow(() -> new UsernameNotFoundException(email));
     }
 }
