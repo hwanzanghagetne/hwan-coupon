@@ -21,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -63,8 +65,15 @@ public class CouponService {
         log.info("쿠폰 생성 완료 couponId={} name={} issueType={}", saved.getId(), saved.getName(), saved.getIssueType());
 
         if (saved.getIssueType() == IssueType.FIRST_COME && saved.getTotalQuantity() != null) {
-            couponRedisService.initStock(saved.getId(), saved.getTotalQuantity());
-            log.info("Redis 재고 초기화 couponId={} totalQuantity={}", saved.getId(), saved.getTotalQuantity());
+            long couponId = saved.getId();
+            int totalQuantity = saved.getTotalQuantity();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    couponRedisService.initStock(couponId, totalQuantity);
+                    log.info("Redis 재고 초기화 couponId={} totalQuantity={}", couponId, totalQuantity);
+                }
+            });
         }
 
         return CouponResponse.from(saved);
