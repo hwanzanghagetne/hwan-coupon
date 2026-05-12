@@ -27,7 +27,7 @@ public class MemberController {
 
     @PostMapping("/signup")
     public ResponseEntity<SignupResponse> signup(@RequestBody @Valid SignupRequest request) {
-        return ResponseEntity.ok(memberService.signup(request));
+        return ResponseEntity.status(201).body(memberService.signup(request));
     }
 
     @PostMapping("/login")

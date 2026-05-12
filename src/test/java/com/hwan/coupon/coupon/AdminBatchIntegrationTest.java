@@ -18,6 +18,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,8 +36,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+@Testcontainers
 @SpringBootTest
+@ActiveProfiles("test")
 class AdminBatchIntegrationTest {
+
+    @Container
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("coupon")
+            .withUsername("test")
+            .withPassword("test");
+
+    @Container
+    static RabbitMQContainer rabbitMQ = new RabbitMQContainer("rabbitmq:3-management");
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url",
+                () -> mysql.getJdbcUrl() + "?rewriteBatchedStatements=true&characterEncoding=UTF-8");
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+        registry.add("spring.rabbitmq.host", rabbitMQ::getHost);
+        registry.add("spring.rabbitmq.port", rabbitMQ::getAmqpPort);
+        registry.add("spring.rabbitmq.username", rabbitMQ::getAdminUsername);
+        registry.add("spring.rabbitmq.password", rabbitMQ::getAdminPassword);
+    }
+
 
     @Autowired private AdminBatchService adminBatchService;
     @Autowired private CouponRepository couponRepository;
