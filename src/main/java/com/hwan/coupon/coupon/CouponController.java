@@ -33,7 +33,7 @@ public class CouponController {
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CouponResponse> createCoupon(@RequestBody @Valid CreateCouponRequest request) {
-        return ResponseEntity.ok(couponService.createCoupon(request));
+        return ResponseEntity.status(201).body(couponService.createCoupon(request));
     }
 
     @GetMapping
@@ -94,7 +94,7 @@ public class CouponController {
     public ResponseEntity<BatchIssueResponse> batchIssue(
             @PathVariable Long couponId,
             @RequestBody @Valid BatchIssueRequest request) {
-        return ResponseEntity.ok(adminBatchService.requestBatch(couponId, request.userIds()));
+        return ResponseEntity.accepted().body(adminBatchService.requestBatch(couponId, request.userIds()));
     }
 
     @GetMapping("/batches/{batchId}")
