@@ -49,6 +49,9 @@ src/main/resources/application-local.yaml
 
 ### Claude Code ###
 .claude/
+AGENTS.md
+career_project_summary.md
+memory/
 
 ### JVM Heap Dumps ###
 *.hprof
