@@ -165,7 +165,7 @@ class CouponServiceTest {
     @DisplayName("만료된 쿠폰 사용 시 COUPON_EXPIRED 예외가 발생한다")
     void useCoupon_만료쿠폰() {
         Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1));
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1));
         ReflectionTestUtils.setField(coupon, "expiredAt", LocalDateTime.now().minusDays(1));
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
 
@@ -179,7 +179,7 @@ class CouponServiceTest {
     @DisplayName("발급 이력이 없는 쿠폰 사용 시 COUPON_ISSUE_NOT_FOUND 예외가 발생한다")
     void useCoupon_발급이력없음() {
         Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1));
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1));
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
         when(couponIssueRepository.findByCouponIdAndUserId(1L, 1L)).thenReturn(Optional.empty());
 
@@ -207,7 +207,7 @@ class CouponServiceTest {
     @DisplayName("이미 비활성화된 쿠폰 비활성화 시 COUPON_ALREADY_INACTIVE 예외가 발생한다")
     void deactivateCoupon_이미비활성() {
         Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
-                IssueType.FIRST_COME, null, null, LocalDateTime.now().plusDays(1));
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1));
         when(couponRepository.markInactive(1L, CouponStatus.INACTIVE, CouponStatus.ACTIVE)).thenReturn(0);
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
 
