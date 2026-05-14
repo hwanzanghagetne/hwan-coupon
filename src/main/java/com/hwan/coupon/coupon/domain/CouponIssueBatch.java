@@ -40,10 +40,6 @@ public class CouponIssueBatch {
         return batch;
     }
 
-    public void markProcessing() {
-        this.status = BatchStatus.PROCESSING;
-    }
-
     public void markDone() {
         this.status = BatchStatus.DONE;
         this.completedAt = LocalDateTime.now();
