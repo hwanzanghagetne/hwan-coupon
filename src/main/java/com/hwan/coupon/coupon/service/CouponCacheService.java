@@ -28,5 +28,6 @@ public class CouponCacheService {
 
     @CacheEvict(value = "coupon", key = "#couponId")
     public void evict(Long couponId) {
+        // Spring AOP가 @CacheEvict를 처리하므로 메서드 바디가 비어있어도 정상 동작
     }
 }
