@@ -64,7 +64,7 @@ public class CouponService {
         Coupon saved = couponRepository.save(coupon);
         log.info("쿠폰 생성 완료 couponId={} name={} issueType={}", saved.getId(), saved.getName(), saved.getIssueType());
 
-        if (saved.getIssueType() == IssueType.FIRST_COME && saved.getTotalQuantity() != null) {
+        if (saved.getIssueType() == IssueType.FIRST_COME) {
             long couponId = saved.getId();
             int totalQuantity = saved.getTotalQuantity();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -149,6 +149,7 @@ public class CouponService {
         Map<Long, Coupon> couponMap = couponRepository.findAllById(couponIds).stream()
                 .collect(Collectors.toMap(Coupon::getId, c -> c));
 
+        // coupon 삭제 API가 없고 비활성화만 존재하므로 coupon_issue가 참조하는 coupon은 항상 존재함
         return issuePage.map(issue -> MyCouponResponse.from(issue, couponMap.get(issue.getCouponId())));
     }
 
