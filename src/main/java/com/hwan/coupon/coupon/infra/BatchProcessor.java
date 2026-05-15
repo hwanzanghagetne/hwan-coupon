@@ -45,7 +45,7 @@ public class BatchProcessor {
         log.info("배치 처리 시작 batchId={} couponId={} targetCount={}", batchId, couponId, userIds.size());
 
         int updated = transactionTemplate.execute(status ->
-                batchRepository.updateStatusIfMatch(batchId, BatchStatus.PENDING, BatchStatus.PROCESSING)
+                batchRepository.updateStatusIfMatch(batchId, BatchStatus.PENDING, BatchStatus.PROCESSING, LocalDateTime.now())
         );
         if (updated == 0) {
             log.warn("배치 선점 실패 batchId={}", batchId);
@@ -61,7 +61,7 @@ public class BatchProcessor {
 
             final int count = actualInserted;
             transactionTemplate.executeWithoutResult(status ->
-                    couponRepository.incrementIssuedQuantityBy(couponId, count)
+                    couponRepository.incrementIssuedQuantityBy(couponId, count, LocalDateTime.now())
             );
 
             transactionTemplate.executeWithoutResult(status -> {

@@ -14,25 +14,25 @@ import java.util.List;
 public interface CouponRepository extends JpaRepository<Coupon, Long> {
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + 1 WHERE c.id = :couponId")
-    void incrementIssuedQuantity(@Param("couponId") Long couponId);
+    @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + 1, c.updatedAt = :now WHERE c.id = :couponId")
+    void incrementIssuedQuantity(@Param("couponId") Long couponId, @Param("now") LocalDateTime now);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :status WHERE c.id = :couponId AND c.status = 'ACTIVE'")
-    int markExhausted(@Param("couponId") Long couponId, @Param("status") CouponStatus status);
+    @Query("UPDATE Coupon c SET c.status = :status, c.updatedAt = :now WHERE c.id = :couponId AND c.status = 'ACTIVE'")
+    int markExhausted(@Param("couponId") Long couponId, @Param("status") CouponStatus status, @Param("now") LocalDateTime now);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + :count WHERE c.id = :couponId")
-    void incrementIssuedQuantityBy(@Param("couponId") Long couponId, @Param("count") int count);
+    @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + :count, c.updatedAt = :now WHERE c.id = :couponId")
+    void incrementIssuedQuantityBy(@Param("couponId") Long couponId, @Param("count") int count, @Param("now") LocalDateTime now);
 
     @Query("SELECT c.id FROM Coupon c WHERE c.status = :status AND c.expiredAt < :now")
     List<Long> findExpiredActiveCouponIds(@Param("status") CouponStatus status, @Param("now") LocalDateTime now);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :status WHERE c.id IN :ids AND c.status = :currentStatus")
-    int markInactiveByIds(@Param("ids") List<Long> ids, @Param("status") CouponStatus status, @Param("currentStatus") CouponStatus currentStatus);
+    @Query("UPDATE Coupon c SET c.status = :status, c.updatedAt = :now WHERE c.id IN :ids AND c.status = :currentStatus")
+    int markInactiveByIds(@Param("ids") List<Long> ids, @Param("status") CouponStatus status, @Param("currentStatus") CouponStatus currentStatus, @Param("now") LocalDateTime now);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :status WHERE c.id = :couponId AND c.status = :currentStatus")
-    int markInactive(@Param("couponId") Long couponId, @Param("status") CouponStatus status, @Param("currentStatus") CouponStatus currentStatus);
+    @Query("UPDATE Coupon c SET c.status = :status, c.updatedAt = :now WHERE c.id = :couponId AND c.status = :currentStatus")
+    int markInactive(@Param("couponId") Long couponId, @Param("status") CouponStatus status, @Param("currentStatus") CouponStatus currentStatus, @Param("now") LocalDateTime now);
 }
