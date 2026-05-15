@@ -29,6 +29,9 @@ public class CouponIssueBatch {
     @Column(nullable = false, updatable = false)
     private LocalDateTime requestedAt;
 
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+
     private LocalDateTime completedAt;
 
     public static CouponIssueBatch create(Long couponId, int targetCount) {
@@ -37,16 +40,19 @@ public class CouponIssueBatch {
         batch.targetCount = targetCount;
         batch.status = BatchStatus.PENDING;
         batch.requestedAt = LocalDateTime.now();
+        batch.updatedAt = batch.requestedAt;
         return batch;
     }
 
     public void markDone() {
         this.status = BatchStatus.DONE;
         this.completedAt = LocalDateTime.now();
+        this.updatedAt = this.completedAt;
     }
 
     public void markFailed() {
         this.status = BatchStatus.FAILED;
         this.completedAt = LocalDateTime.now();
+        this.updatedAt = this.completedAt;
     }
 }

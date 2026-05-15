@@ -54,6 +54,14 @@ public class Coupon {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
     public static Coupon create(String name, DiscountType discountType, int discountValue,
                                 Integer totalQuantity, Integer minOrderAmount, IssueType issueType,
                                 LocalTime issueStartTime, LocalTime issueEndTime,
@@ -78,6 +86,7 @@ public class Coupon {
         coupon.expiredAt = expiredAt;
         coupon.status = CouponStatus.ACTIVE;
         coupon.createdAt = LocalDateTime.now();
+        coupon.updatedAt = coupon.createdAt;
         return coupon;
     }
 
