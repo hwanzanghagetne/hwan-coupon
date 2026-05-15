@@ -21,6 +21,6 @@ public interface CouponIssueBatchRepository extends JpaRepository<CouponIssueBat
 
     // PENDING 상태일 때만 PROCESSING으로 변경 — 반환값이 0이면 다른 인스턴스가 이미 선점한 것
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE CouponIssueBatch b SET b.status = :to WHERE b.id = :id AND b.status = :from")
-    int updateStatusIfMatch(@Param("id") Long id, @Param("from") BatchStatus from, @Param("to") BatchStatus to);
+    @Query("UPDATE CouponIssueBatch b SET b.status = :to, b.updatedAt = :now WHERE b.id = :id AND b.status = :from")
+    int updateStatusIfMatch(@Param("id") Long id, @Param("from") BatchStatus from, @Param("to") BatchStatus to, @Param("now") LocalDateTime now);
 }

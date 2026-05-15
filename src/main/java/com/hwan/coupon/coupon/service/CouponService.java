@@ -173,7 +173,7 @@ public class CouponService {
 
     @Transactional
     public void deactivateCoupon(Long couponId) {
-        int updated = couponRepository.markInactive(couponId, CouponStatus.INACTIVE, CouponStatus.ACTIVE);
+        int updated = couponRepository.markInactive(couponId, CouponStatus.INACTIVE, CouponStatus.ACTIVE, LocalDateTime.now());
 
         if (updated == 0) {
             couponRepository.findById(couponId)

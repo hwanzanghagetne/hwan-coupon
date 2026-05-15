@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 /**
  * 쿠폰 발급 이력 DB 쓰기를 담당하는 컴포넌트.
  *
@@ -30,9 +32,10 @@ public class CouponIssueWriter {
     public CouponIssueResponse saveIssue(Long couponId, Long userId, long remaining) {
         CouponIssue couponIssue = CouponIssue.create(couponId, userId);
         couponIssueRepository.save(couponIssue);
-        couponRepository.incrementIssuedQuantity(couponId);
+        LocalDateTime now = LocalDateTime.now();
+        couponRepository.incrementIssuedQuantity(couponId, now);
         if (remaining == 0) {
-            couponRepository.markExhausted(couponId, CouponStatus.EXHAUSTED);
+            couponRepository.markExhausted(couponId, CouponStatus.EXHAUSTED, now);
             couponCacheService.evict(couponId);
         }
         return CouponIssueResponse.from(couponIssue);

@@ -42,7 +42,7 @@ public class CouponExpiryScheduler {
         // @Transactional 대신 TransactionTemplate을 쓰는 이유:
         //   이 블록이 끝나면 즉시 커밋됨 → 이후 Redis evict를 DB 커밋 완료 후 실행 가능
         int[] result = transactionTemplate.execute(status -> {
-            int coupons = couponRepository.markInactiveByIds(expiredCouponIds, CouponStatus.INACTIVE, CouponStatus.ACTIVE);
+            int coupons = couponRepository.markInactiveByIds(expiredCouponIds, CouponStatus.INACTIVE, CouponStatus.ACTIVE, now);
             int issues = couponIssueRepository.expireIssuedByCouponIds(expiredCouponIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED);
             return new int[]{coupons, issues};
         });
