@@ -63,4 +63,9 @@ public class CouponRedisService {
     public void syncStockIfAbsent(Long couponId, int remaining) {
         redisTemplate.opsForValue().setIfAbsent(STOCK_KEY + couponId, String.valueOf(remaining));
     }
+
+    public Long getRemainingStock(Long couponId) {
+        String value = redisTemplate.opsForValue().get(STOCK_KEY + couponId);
+        return value == null ? null : Long.valueOf(value);
+    }
 }
