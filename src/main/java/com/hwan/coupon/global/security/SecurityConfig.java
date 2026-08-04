@@ -31,6 +31,7 @@ public class SecurityConfig {
             .securityContext(ctx -> ctx.securityContextRepository(securityContextRepository()))
             .csrf(csrf -> csrf.disable()) // JSON API 서버로 브라우저 폼 기반 요청을 받지 않아 비활성화. 브라우저 클라이언트와 쿠키 세션으로 연동하는 구조로 전환 시 재활성화 필요.
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/", "/index.html", "/favicon.ico", "/error").permitAll()
                 .requestMatchers("/api/members/signup", "/api/members/login").permitAll()
                 .requestMatchers("/api/members/logout").authenticated()
                 .anyRequest().authenticated()
@@ -54,3 +55,4 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 }
+

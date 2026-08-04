@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>환쿠폰 데모</title>
+<style>
+body{margin:0;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif;background:linear-gradient(180deg,#f7f2e8 0%,#efe7d8 100%);color:#1f2b24}
+.wrap{max-width:1240px;margin:24px auto;padding:0 16px}
+.hero,.card{background:#fffdf8;border:1px solid #e9dfcf;border-radius:22px;box-shadow:0 14px 34px rgba(60,40,20,.08)}
+.hero{padding:26px;margin-bottom:18px}
+.heroGrid{display:grid;grid-template-columns:1.4fr .9fr;gap:18px;align-items:start}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+.card{padding:18px}
+.block{padding:14px;border:1px solid #eee4d4;border-radius:16px;background:#fff;margin-top:12px}
+.stepBox{padding:16px;border-radius:18px;background:#1f2b24;color:#f5f1e8}
+.stepBox h3,.card h2{margin:0 0 10px}
+.step{display:flex;gap:10px;align-items:flex-start;margin-top:10px}
+.stepNo{flex:0 0 auto;width:28px;height:28px;border-radius:999px;background:#de5d28;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+h1{margin:8px 0 10px;font-size:clamp(30px,4vw,48px)}
+p{color:#5d675f;line-height:1.55}
+.stepBox p{color:#f5f1e8;opacity:.88;margin:0}
+.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#fff0e5;color:#b04c1f;font-weight:700;font-size:13px}
+.subTitle{margin:0;color:#5d675f}
+.role{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700}
+.role.admin{background:#fff0e5;color:#b04c1f}
+.role.user{background:#eef5ef;color:#265b36}
+.role.info{background:#eef2ee;color:#445248}
+.hint{margin:8px 0 0;color:#6d756f;font-size:13px;line-height:1.5}
+.helper{margin:6px 0 0;color:#7a746a;font-size:12px;line-height:1.45}
+label{display:block;font-size:12px;font-weight:700;color:#5d675f;margin-bottom:8px;text-transform:uppercase}
+input,textarea{width:100%;padding:11px 12px;border-radius:12px;border:1px solid #dccfb9;background:#fffefa;font:inherit;box-sizing:border-box}
+textarea{min-height:138px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+button{border:0;border-radius:12px;padding:10px 14px;font:inherit;font-weight:700;cursor:pointer;background:#de5d28;color:#fff}
+button.sub{background:#eef2ee;color:#1f2b24}
+button.ghost{background:#fff4eb;color:#a24b20}
+pre{margin:0;background:#171b18;color:#edf5ef;padding:14px;border-radius:16px;min-height:240px;white-space:pre-wrap;word-break:break-word;overflow:auto}
+.log{max-height:280px;overflow:auto}
+.item{padding:9px 0;border-bottom:1px dashed #e1d6c6;color:#5d675f;font-size:13px}
+@media(max-width:1100px){.heroGrid,.grid{grid-template-columns:1fr}}
+@media(max-width:640px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<section class="hero">
+  <div class="heroGrid">
+    <div>
+      <span class="pill">Hwan Coupon Demo</span>
+      <h1>백엔드 시연용 최소 화면</h1>
+      <p class="subTitle">기본 기능 시연과 핵심 테스트를 한 화면에서 바로 볼 수 있게 정리한 데모입니다. 관리자는 쿠폰 생성/배치 요청을, 사용자는 발급/조회/사용을, 핵심 테스트는 동시성/비동기 흐름을 한 번에 확인합니다.</p>
+    </div>
+    <div class="stepBox">
+      <h3>추천 시연 순서</h3>
+      <div class="step"><div class="stepNo">1</div><p>관리자 계정으로 로그인한 뒤 <strong>선착순 쿠폰 예시</strong> 또는 <strong>대량 발급 쿠폰 예시</strong>를 고릅니다.</p></div>
+      <div class="step"><div class="stepNo">2</div><p><strong>쿠폰 생성</strong>을 누르면 생성된 쿠폰 ID가 아래 발급 입력칸으로 자동 반영됩니다.</p></div>
+      <div class="step"><div class="stepNo">3</div><p>일반 사용자 계정으로 로그인한 뒤 <strong>선착순 발급</strong>, <strong>내 쿠폰 조회</strong>, <strong>쿠폰 사용</strong>을 테스트합니다.</p></div>
+      <div class="step"><div class="stepNo">4</div><p>핵심 강점을 보고 싶으면 <strong>선착순 동시성 테스트</strong>나 <strong>대량 발급 빠른 테스트</strong>를 누르면 됩니다. 쿠폰과 테스트 유저를 자동 생성합니다.</p></div>
+    </div>
+  </div>
+</section>
+<section class="grid">
+<article class="card">
+  <h2>1. 관리자 준비</h2>
+  <div class="role admin">ADMIN 전용</div>
+  <p class="hint">쿠폰 생성, 쿠폰 목록 조회, 대량 발급 요청, 빠른 핵심 테스트는 관리자 로그인 상태에서만 사용합니다.</p>
+
+  <div class="block">
+    <label>관리자 로그인</label>
+    <div class="row">
+      <div><label>이메일</label><input id="loginEmail" value="admin@test.com"></div>
+      <div><label>비밀번호</label><input id="loginPassword" type="password" value="123"></div>
+    </div>
+    <div class="actions">
+      <button onclick="fillAdminLogin()">관리자 예시값</button>
+      <button class="sub" onclick="loginUser()">로그인</button>
+      <button class="sub" onclick="logoutUser()">로그아웃</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <label>쿠폰 생성 JSON</label>
+    <div class="actions">
+      <button class="ghost" onclick="setFirstComePreset()">선착순 쿠폰 예시</button>
+      <button class="ghost" onclick="setBatchPreset()">대량 발급 쿠폰 예시</button>
+    </div>
+    <textarea id="couponJson">{
+  "name": "선착순 데모 쿠폰",
+  "discountType": "FIXED",
+  "discountValue": 3000,
+  "totalQuantity": 100,
+  "minOrderAmount": 10000,
+  "issueType": "FIRST_COME",
+  "issueStartTime": null,
+  "issueEndTime": null,
+  "expiredAt": "2026-12-31T23:59:59"
+}</textarea>
+    <p class="helper">선착순 발급 버튼을 테스트하려면 <code>FIRST_COME</code>, 대량 발급 요청을 테스트하려면 <code>ADMIN_ISSUED</code> 쿠폰을 생성해야 합니다.</p>
+    <div class="actions"><button onclick="createCoupon()">쿠폰 생성</button><button class="sub" onclick="couponList()">쿠폰 목록 조회</button></div>
+  </div>
+
+  <div class="block">
+    <label>빠른 핵심 테스트</label>
+    <div class="row">
+      <div><label>동시 요청 수</label><input id="demoRequestUserCount" type="number" value="100"></div>
+      <div><label>쿠폰 수량</label><input id="demoCouponQuantity" type="number" value="10"></div>
+    </div>
+    <div class="row">
+      <div><label>실행 스레드 수</label><input id="demoThreadCount" type="number" value="32"></div>
+      <div><label>배치 유저 수</label><input id="demoBatchUserCount" type="number" value="500"></div>
+    </div>
+    <p class="helper">선착순 동시성 테스트는 새 FIRST_COME 쿠폰과 테스트 유저를 자동 생성한 뒤 서버 내부에서 병렬 요청을 실행합니다. 기대 결과는 <code>issuedRows == couponQuantity</code>, <code>successCount == couponQuantity</code>, 나머지는 <code>COUPON_EXHAUSTED</code>입니다.</p>
+    <div class="actions">
+      <button onclick="runFirstComeDemo()">선착순 동시성 테스트</button>
+      <button class="sub" onclick="runBatchDemo()">대량 발급 빠른 테스트</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <label>대량 발급 요청</label>
+    <div class="row">
+      <div><label>배치 쿠폰 ID</label><input id="batchCouponId" type="number" value="1"></div>
+      <div><label>배치 ID</label><input id="batchId" type="number" value="1"></div>
+    </div>
+    <label>대상 유저 ID (쉼표 구분)</label>
+    <textarea id="batchUserIds">2,3,4,5,6</textarea>
+    <p class="helper">회원가입 응답이나 DB에서 확인한 실제 사용자 ID를 넣어야 합니다. 존재하지 않는 ID는 발급되지 않습니다.</p>
+    <div class="actions">
+      <button onclick="batchIssue()">대량 발급 요청</button>
+      <button class="sub" onclick="batchStatus()">배치 상태 조회</button>
+    </div>
+  </div>
+</article>
+
+<article class="card">
+  <h2>2. 사용자 시연</h2>
+  <div class="role user">USER 전용</div>
+  <p class="hint">선착순 발급 버튼은 <strong>일반 사용자로 로그인한 상태에서</strong>, 관리자가 미리 만든 쿠폰 ID를 입력하고 누르는 버튼입니다.</p>
+
+  <div class="block">
+    <label>일반 사용자 회원가입</label>
+    <div class="row">
+      <div><label>회원가입 이메일</label><input id="signupEmail" value="user1@test.com"></div>
+      <div><label>회원가입 비밀번호</label><input id="signupPassword" type="password" value="123"></div>
+    </div>
+    <div class="row">
+      <div><label>이름</label><input id="signupName" value="일반 유저"></div>
+      <div><label>전화번호</label><input id="signupPhone" value="010-1111-2222"></div>
+    </div>
+    <div><label>생년월일</label><input id="signupBirthdate" type="date" value="1999-01-01"></div>
+    <div class="actions">
+      <button onclick="fillUserSignup()">사용자 예시값</button>
+      <button class="sub" onclick="signupUser()">회원가입</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <label>선착순 발급 / 사용</label>
+    <div class="row">
+      <div><label>쿠폰 ID</label><input id="issueCouponId" type="number" value="1"></div>
+      <div><label>주문 금액</label><input id="orderAmount" type="number" value="10000"></div>
+    </div>
+    <p class="helper">1) 관리자가 생성한 쿠폰 ID를 입력하고 2) 일반 사용자로 로그인한 뒤 3) 선착순 발급을 누르면 됩니다. 주문 금액은 쿠폰 사용 시 최소 주문 금액 검증에 쓰입니다.</p>
+    <div class="actions">
+      <button onclick="issueCoupon()">선착순 발급</button>
+      <button class="sub" onclick="myCoupons()">내 쿠폰 조회</button>
+      <button class="sub" onclick="useCoupon()">쿠폰 사용</button>
+      <button class="sub" onclick="restoreCoupon()">쿠폰 복원</button>
+    </div>
+  </div>
+</article>
+
+<article class="card">
+  <h2>3. 콘솔</h2>
+  <div class="role info">응답 확인</div>
+  <p class="hint" id="sessionState">세션 상태: 로그인 전</p>
+  <pre id="output">아직 실행한 요청이 없습니다.</pre>
+  <div class="block log" id="log"></div>
+</article>
+</section>
+</div>
+<script>
+var output=document.getElementById('output');
+var logBox=document.getElementById('log');
+var sessionState=document.getElementById('sessionState');
+var firstComePreset={
+  name:"선착순 데모 쿠폰",
+  discountType:"FIXED",
+  discountValue:3000,
+  totalQuantity:100,
+  minOrderAmount:10000,
+  issueType:"FIRST_COME",
+  issueStartTime:null,
+  issueEndTime:null,
+  expiredAt:"2026-12-31T23:59:59"
+};
+var batchPreset={
+  name:"대량 발급 데모 쿠폰",
+  discountType:"FIXED",
+  discountValue:5000,
+  totalQuantity:null,
+  minOrderAmount:null,
+  issueType:"ADMIN_ISSUED",
+  issueStartTime:null,
+  issueEndTime:null,
+  expiredAt:"2026-12-31T23:59:59"
+};
+function addLog(message){var div=document.createElement('div');div.className='item';div.textContent='['+new Date().toLocaleTimeString()+'] '+message;logBox.prepend(div);}
+function printResult(title,data){output.textContent=title+'\n\n'+(typeof data==='string'?data:JSON.stringify(data,null,2));}
+function setCouponJson(body){couponJson.value=JSON.stringify(body,null,2);}
+function setFirstComePreset(){setCouponJson(firstComePreset);addLog('선착순 쿠폰 예시값 적용');}
+function setBatchPreset(){setCouponJson(batchPreset);addLog('대량 발급 쿠폰 예시값 적용');}
+function fillAdminLogin(){loginEmail.value='admin@test.com';loginPassword.value='123';addLog('관리자 로그인 예시값 적용');}
+function fillUserSignup(){signupEmail.value='user'+Date.now()+'@test.com';signupPassword.value='123';signupName.value='일반 유저';signupPhone.value='010-1111-2222';signupBirthdate.value='1999-01-01';addLog('사용자 회원가입 예시값 적용');}
+async function req(method,url,body){var opt={method:method,credentials:'include',headers:{}};if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}var res=await fetch(url,opt);var text=await res.text();var data;try{data=text?JSON.parse(text):null;}catch(e){data=text;}return{status:res.status,ok:res.ok,data:data};}
+async function signupUser(){var body={email:signupEmail.value,password:signupPassword.value,name:signupName.value,birthdate:signupBirthdate.value,phone:signupPhone.value};var res=await req('POST','/api/members/signup',body);printResult('POST /api/members/signup',res);addLog('회원가입 ('+res.status+')');}
+async function loginUser(){var body={email:loginEmail.value,password:loginPassword.value};var res=await req('POST','/api/members/login',body);printResult('POST /api/members/login',res);sessionState.textContent='세션 상태: '+(res.ok?'로그인됨 ('+body.email+', role='+(res.data&&res.data.role?res.data.role:(res.data&&res.data.data&&res.data.data.role?res.data.data.role:'UNKNOWN'))+')':'로그인 실패');addLog('로그인 ('+res.status+')');}
+async function logoutUser(){var res=await req('POST','/api/members/logout');printResult('POST /api/members/logout',res);sessionState.textContent='세션 상태: 로그아웃됨';addLog('로그아웃 ('+res.status+')');}
+async function issueCoupon(){var id=issueCouponId.value;var res=await req('POST','/api/coupons/'+id+'/issue');printResult('POST /api/coupons/'+id+'/issue',res);addLog('선착순 발급 ('+res.status+')');}
+async function useCoupon(){var id=issueCouponId.value;var res=await req('POST','/api/coupons/'+id+'/use',{orderAmount:Number(orderAmount.value)});printResult('POST /api/coupons/'+id+'/use',res);addLog('쿠폰 사용 ('+res.status+')');}
+async function restoreCoupon(){var id=issueCouponId.value;var res=await req('POST','/api/coupons/'+id+'/restore');printResult('POST /api/coupons/'+id+'/restore',res);addLog('쿠폰 복원 ('+res.status+')');}
+async function myCoupons(){var res=await req('GET','/api/coupons/my');printResult('GET /api/coupons/my',res);addLog('내 쿠폰 조회 ('+res.status+')');}
+async function createCoupon(){var body=JSON.parse(couponJson.value);var res=await req('POST','/api/coupons',body);printResult('POST /api/coupons',res);var data=res.data&&res.data.data?res.data.data:res.data;if(res.ok&&data&&data.id){issueCouponId.value=data.id;batchCouponId.value=data.id;addLog('생성된 쿠폰 ID 자동 반영: '+data.id);}addLog('쿠폰 생성 ('+res.status+')');}
+async function batchIssue(){var id=batchCouponId.value;var userIds=batchUserIds.value.split(',').map(function(v){return Number(v.trim());}).filter(function(v){return Number.isFinite(v);});var res=await req('POST','/api/coupons/'+id+'/batch-issue',{userIds:userIds});printResult('POST /api/coupons/'+id+'/batch-issue',res);var data=res.data&&res.data.data?res.data.data:res.data;if(data&&data.batchId){batchId.value=data.batchId;addLog('생성된 배치 ID 자동 반영: '+data.batchId);}addLog('대량 발급 요청 ('+res.status+')');}
+async function batchStatus(){var id=batchId.value;var res=await req('GET','/api/coupons/batches/'+id);printResult('GET /api/coupons/batches/'+id,res);addLog('배치 상태 조회 ('+res.status+')');}
+async function couponList(){var res=await req('GET','/api/coupons');printResult('GET /api/coupons',res);addLog('쿠폰 목록 조회 ('+res.status+')');}
+async function runFirstComeDemo(){var body={requestUserCount:Number(demoRequestUserCount.value),couponQuantity:Number(demoCouponQuantity.value),threadCount:Number(demoThreadCount.value)};var res=await req('POST','/api/demo/first-come',body);printResult('POST /api/demo/first-come',res);var data=res.data&&res.data.data?res.data.data:res.data;if(data&&data.couponId){issueCouponId.value=data.couponId;batchCouponId.value=data.couponId;addLog('동시성 테스트 쿠폰 ID 반영: '+data.couponId);}addLog('선착순 동시성 테스트 ('+res.status+')');}
+async function runBatchDemo(){var body={userCount:Number(demoBatchUserCount.value)};var res=await req('POST','/api/demo/batch',body);printResult('POST /api/demo/batch',res);var data=res.data&&res.data.data?res.data.data:res.data;if(data&&data.couponId){batchCouponId.value=data.couponId;issueCouponId.value=data.couponId;}if(data&&data.batchId){batchId.value=data.batchId;addLog('배치 테스트 결과 반영: couponId='+data.couponId+', batchId='+data.batchId);}addLog('대량 발급 빠른 테스트 ('+res.status+')');}
+setFirstComePreset();
+addLog('데모 화면 준비 완료');
+</script>
+</body>
+</html>
