@@ -60,6 +60,7 @@ flowchart LR
 - `coupon`: 쿠폰 템플릿과 발급 규칙을 저장하며, `issued_quantity`를 반정규화해 재고 조회 비용을 줄였습니다.
 - `coupon_issue`: 사용자별 발급 이력을 관리하며, `UNIQUE (user_id, coupon_id)`로 중복 발급을 방지합니다.
 - `coupon_issue_batch`: 관리자 대량 발급 요청 단위를 저장하며, 배치 상태 추적과 복구 기준이 됩니다.
+- `coupon_issue_request`: 선착순 발급의 접수 상태를 저장하며, `coupon_issue`(최종 발급 결과)와 별개로 큐 처리 진행 상황을 추적합니다.
 
 ---
 
@@ -68,6 +69,8 @@ flowchart LR
 ### 선착순 쿠폰 발급
 - 사용자 직접 발급 요청
 - `Redis Lua Script` 기반 중복 체크 + 재고 차감
+- 당첨 확정 후 DB 반영은 `RabbitMQ` 큐로 순차 처리해 동시 쓰기 경합 제거
+- 발급 요청 상태 조회 (`PENDING` → `PROCESSING` → `SUCCESS` / `FAILED`)
 - 쿠폰 사용 / 복원
 - 내 쿠폰 목록 조회
 
@@ -95,11 +98,16 @@ flowchart LR
 - Redis에서 선점 성공 후 DB 저장이 실패하면 상태가 어긋날 수 있습니다.
 - 쿠폰 생성 후 Redis 초기화는 `afterCommit`에서 실행하고, 저장 실패 시 Redis rollback 로직으로 상태를 복구하도록 설계했습니다.
 
-### 3) 관리자 대량 발급의 요청-처리 분리
+### 3) 선착순 발급의 동시 쓰기 데드락
+- Redis로 당첨자를 가려낸 뒤에도, 당첨된 수백 명이 거의 동시에 `coupon`/`coupon_issue`를 갱신하면서 DB 데드락이 발생했습니다.
+- 당첨 즉시 DB에 쓰지 않고 `coupon_issue_request`에 `PENDING`으로 먼저 기록한 뒤 RabbitMQ에 발행하고, 컨슈머(`FirstComeIssueProcessor`)가 메시지를 하나씩 순차 소비해 반영하도록 바꿨습니다. 동시 쓰기 자체가 없어지므로 데드락이 구조적으로 사라집니다.
+- 사용자는 발급 결과를 기다리지 않고 접수 응답을 즉시 받고, 이후 상태 조회 API로 최종 결과를 확인합니다.
+
+### 4) 관리자 대량 발급의 요청-처리 분리
 - 대량 발급을 요청 스레드에서 직접 처리하면 응답 지연과 스레드 점유가 커집니다.
 - 관리자 요청은 `coupon_issue_batch`에 저장한 뒤 RabbitMQ에 작업 메시지를 발행하고, 실제 발급은 `BatchProcessor`가 비동기로 처리하도록 분리했습니다.
 
-### 4) 배치 고착 복구
+### 5) 배치 고착 복구
 - RabbitMQ 발행 실패나 프로세스 비정상 종료가 발생하면 배치가 `PENDING` 또는 `PROCESSING` 상태에 고착될 수 있습니다.
 - 이를 위해 `BatchRecoveryScheduler`를 두고 timeout이 지난 배치를 `FAILED`로 전환하도록 했습니다.
 
@@ -113,7 +121,8 @@ flowchart LR
 | 로그인 | `POST` | `/api/members/login` |
 | 쿠폰 생성 | `POST` | `/api/coupons` |
 | 쿠폰 목록 조회 | `GET` | `/api/coupons` |
-| 선착순 쿠폰 발급 | `POST` | `/api/coupons/{couponId}/issue` |
+| 선착순 쿠폰 발급 요청 | `POST` | `/api/coupons/{couponId}/issue` |
+| 발급 요청 상태 조회 | `GET` | `/api/coupons/issue-requests/{requestId}` |
 | 내 쿠폰 조회 | `GET` | `/api/coupons/my` |
 | 쿠폰 사용 | `POST` | `/api/coupons/{couponId}/use` |
 | 관리자 대량 발급 요청 | `POST` | `/api/coupons/{couponId}/batch-issue` |
