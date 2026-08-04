@@ -62,7 +62,7 @@ class CouponExpirySchedulerTest {
             TransactionCallback<?> callback = inv.getArgument(0);
             return callback.doInTransaction(null);
         });
-        when(couponRepository.markInactiveByIds(expiredIds, CouponStatus.INACTIVE, CouponStatus.ACTIVE))
+        when(couponRepository.markInactiveByIds(eq(expiredIds), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any()))
                 .thenReturn(3);
         when(couponIssueRepository.expireIssuedByCouponIds(expiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED))
                 .thenReturn(15);
@@ -70,7 +70,7 @@ class CouponExpirySchedulerTest {
         couponExpiryScheduler.expireOverdueCoupons();
 
         // DB 업데이트 검증
-        verify(couponRepository).markInactiveByIds(expiredIds, CouponStatus.INACTIVE, CouponStatus.ACTIVE);
+        verify(couponRepository).markInactiveByIds(eq(expiredIds), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any());
         verify(couponIssueRepository).expireIssuedByCouponIds(expiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED);
 
         // 각 만료된 쿠폰 ID에 대해 캐시 evict 검증
@@ -89,7 +89,7 @@ class CouponExpirySchedulerTest {
             TransactionCallback<?> callback = inv.getArgument(0);
             return callback.doInTransaction(null);
         });
-        when(couponRepository.markInactiveByIds(any(), any(), any())).thenReturn(1);
+        when(couponRepository.markInactiveByIds(any(), any(), any(), any())).thenReturn(1);
         when(couponIssueRepository.expireIssuedByCouponIds(any(), any(), any())).thenReturn(1);
 
         couponExpiryScheduler.expireOverdueCoupons();

@@ -2,15 +2,19 @@ package com.hwan.coupon.coupon.service;
 
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponIssue;
-import com.hwan.coupon.coupon.domain.CouponIssueStatus;
+import com.hwan.coupon.coupon.domain.CouponIssueRequest;
+import com.hwan.coupon.coupon.domain.CouponIssueRequestStatus;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
 import static com.hwan.coupon.coupon.domain.IssueType.FIRST_COME;
 import com.hwan.coupon.coupon.dto.CouponCacheDto;
-import com.hwan.coupon.coupon.dto.CouponIssueResponse;
+import com.hwan.coupon.coupon.dto.CouponIssueAcceptedResponse;
+import com.hwan.coupon.coupon.infra.FirstComeIssuePayload;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
+import com.hwan.coupon.coupon.repository.CouponIssueRequestRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.global.config.RabbitMQConfig;
 import com.hwan.coupon.global.exception.BusinessException;
 import com.hwan.coupon.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
@@ -23,11 +27,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,13 +50,16 @@ class CouponServiceTest {
     private CouponIssueRepository couponIssueRepository;
 
     @Mock
+    private CouponIssueRequestRepository issueRequestRepository;
+
+    @Mock
     private CouponRedisService couponRedisService;
 
     @Mock
     private CouponCacheService couponCacheService;
 
     @Mock
-    private CouponIssueWriter couponIssueWriter;
+    private RabbitTemplate rabbitTemplate;
 
     // ---- issueCoupon ----
 
@@ -131,21 +140,27 @@ class CouponServiceTest {
     }
 
     @Test
-    @DisplayName("정상 발급 시 CouponIssueResponse를 반환한다")
+    @DisplayName("정상 발급 요청 시 접수 상태(PENDING)를 반환하고 큐에 메시지를 발행한다")
     void issueCoupon_성공() {
         CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
-        CouponIssueResponse expected = new CouponIssueResponse(null, 1L, 1L, CouponIssueStatus.ISSUED, LocalDateTime.now());
+        CouponIssueRequest savedRequest = CouponIssueRequest.create(1L, 1L);
+        ReflectionTestUtils.setField(savedRequest, "id", 10L);
 
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
         when(couponRedisService.tryIssue(1L, 1L)).thenReturn(5L);
-        when(couponIssueWriter.saveIssue(anyLong(), anyLong(), anyLong())).thenReturn(expected);
+        when(issueRequestRepository.save(any())).thenReturn(savedRequest);
 
-        CouponIssueResponse response = couponService.issueCoupon(1L, 1L);
+        CouponIssueAcceptedResponse response = couponService.issueCoupon(1L, 1L);
 
+        assertThat(response.requestId()).isEqualTo(10L);
         assertThat(response.couponId()).isEqualTo(1L);
-        assertThat(response.userId()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo(CouponIssueStatus.ISSUED);
+        assertThat(response.status()).isEqualTo(CouponIssueRequestStatus.PENDING);
+        verify(rabbitTemplate).convertAndSend(
+                eq(RabbitMQConfig.EXCHANGE),
+                eq(RabbitMQConfig.ROUTING_KEY_FIRST_COME),
+                any(FirstComeIssuePayload.class)
+        );
     }
 
     // ---- useCoupon ----
@@ -194,7 +209,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("존재하지 않는 쿠폰 비활성화 시 COUPON_NOT_FOUND 예외가 발생한다")
     void deactivateCoupon_쿠폰없음() {
-        when(couponRepository.markInactive(1L, CouponStatus.INACTIVE, CouponStatus.ACTIVE)).thenReturn(0);
+        when(couponRepository.markInactive(eq(1L), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any(LocalDateTime.class))).thenReturn(0);
         when(couponRepository.findById(1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> couponService.deactivateCoupon(1L))
@@ -208,7 +223,7 @@ class CouponServiceTest {
     void deactivateCoupon_이미비활성() {
         Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
                 IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1));
-        when(couponRepository.markInactive(1L, CouponStatus.INACTIVE, CouponStatus.ACTIVE)).thenReturn(0);
+        when(couponRepository.markInactive(eq(1L), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any(LocalDateTime.class))).thenReturn(0);
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
 
         assertThatThrownBy(() -> couponService.deactivateCoupon(1L))
@@ -220,7 +235,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("쿠폰 비활성화 성공 시 캐시가 evict된다")
     void deactivateCoupon_성공() {
-        when(couponRepository.markInactive(1L, CouponStatus.INACTIVE, CouponStatus.ACTIVE)).thenReturn(1);
+        when(couponRepository.markInactive(eq(1L), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any(LocalDateTime.class))).thenReturn(1);
 
         couponService.deactivateCoupon(1L);
 
