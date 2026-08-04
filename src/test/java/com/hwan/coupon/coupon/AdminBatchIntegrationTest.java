@@ -80,6 +80,10 @@ class AdminBatchIntegrationTest {
                 null, null, LocalDateTime.now().plusYears(1)
         );
         couponId = couponRepository.save(coupon).getId();
+
+        // coupon_issue.user_id는 member(id)를 참조하는 FK가 걸려있어서(V3 마이그레이션),
+        // 실제 member row가 없으면 INSERT IGNORE가 FK 위반을 조용히 스킵해서 발급 건수가 0으로 나온다.
+        createMembers(testUserIds);
     }
 
     @AfterEach
@@ -87,6 +91,28 @@ class AdminBatchIntegrationTest {
         jdbcTemplate.update("DELETE FROM coupon_issue WHERE coupon_id = ?", couponId);
         batchRepository.deleteAll();
         couponRepository.deleteById(couponId);
+        jdbcTemplate.update("DELETE FROM member WHERE id BETWEEN 10001 AND 10005");
+        jdbcTemplate.update("DELETE FROM member WHERE id BETWEEN 200001 AND 201000");
+    }
+
+    private void createMembers(List<Long> ids) {
+        StringBuilder sql = new StringBuilder(
+                "INSERT IGNORE INTO member (id, email, password, name, birthdate, phone, role, created_at, updated_at) VALUES "
+        );
+        List<Object> params = new java.util.ArrayList<>();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) sql.append(",");
+            sql.append("(?,?,?,?,?,?,?,NOW(),NOW())");
+            Long id = ids.get(i);
+            params.add(id);
+            params.add("batchtest" + id + "@test.com");
+            params.add("password");
+            params.add("배치테스트유저" + id);
+            params.add(java.time.LocalDate.of(1990, 1, 1));
+            params.add("010-0000-0000");
+            params.add("USER");
+        }
+        jdbcTemplate.update(sql.toString(), params.toArray());
     }
 
     @Test
@@ -170,6 +196,7 @@ class AdminBatchIntegrationTest {
         List<Long> largeUserIds = LongStream.rangeClosed(200_001L, 201_000L)
                 .boxed()
                 .toList();
+        createMembers(largeUserIds);
 
         BatchIssueResponse response = adminBatchService.requestBatch(couponId, largeUserIds);
 
