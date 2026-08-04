@@ -5,6 +5,8 @@ import com.hwan.coupon.coupon.service.AdminBatchService;
 
 import com.hwan.coupon.coupon.dto.BatchIssueRequest;
 import com.hwan.coupon.coupon.dto.BatchIssueResponse;
+import com.hwan.coupon.coupon.dto.CouponIssueAcceptedResponse;
+import com.hwan.coupon.coupon.dto.CouponIssueRequestStatusResponse;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
 import com.hwan.coupon.coupon.dto.CouponResponse;
 import com.hwan.coupon.coupon.dto.CreateCouponRequest;
@@ -58,10 +60,16 @@ public class CouponController {
 
     @PostMapping("/{couponId}/issue")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<CouponIssueResponse> issueCoupon(
+    public ResponseEntity<CouponIssueAcceptedResponse> issueCoupon(
             @PathVariable Long couponId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(couponService.issueCoupon(couponId, userDetails.getMember().getId()));
+        return ResponseEntity.accepted().body(couponService.issueCoupon(couponId, userDetails.getMember().getId()));
+    }
+
+    @GetMapping("/issue-requests/{requestId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<CouponIssueRequestStatusResponse> getIssueRequestStatus(@PathVariable Long requestId) {
+        return ResponseEntity.ok(couponService.getIssueRequestStatus(requestId));
     }
 
     @GetMapping("/my")
@@ -116,5 +124,4 @@ public class CouponController {
         couponService.deactivateCoupon(couponId);
         return ResponseEntity.noContent().build();
     }
-
 }

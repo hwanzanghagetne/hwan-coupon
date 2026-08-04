@@ -40,10 +40,8 @@ public class AdminBatchService {
 
         List<Long> uniqueUserIds = userIds.stream().distinct().toList();
 
-        CouponIssueBatch saved = transactionTemplate.execute(status -> {
-            CouponIssueBatch batch = CouponIssueBatch.create(couponId, uniqueUserIds.size());
-            return batchRepository.save(batch);
-        });
+        CouponIssueBatch batch = CouponIssueBatch.create(couponId, uniqueUserIds.size());
+        CouponIssueBatch saved = batchRepository.save(batch);
 
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.EXCHANGE,

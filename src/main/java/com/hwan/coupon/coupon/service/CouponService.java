@@ -2,30 +2,35 @@ package com.hwan.coupon.coupon.service;
 
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponIssue;
+import com.hwan.coupon.coupon.domain.CouponIssueRequest;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.IssueType;
-import com.hwan.coupon.coupon.repository.CouponRepository;
-import com.hwan.coupon.coupon.repository.CouponIssueRepository;
-
 import com.hwan.coupon.coupon.dto.CouponCacheDto;
+import com.hwan.coupon.coupon.dto.CouponIssueAcceptedResponse;
+import com.hwan.coupon.coupon.dto.CouponIssueRequestStatusResponse;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
 import com.hwan.coupon.coupon.dto.CouponResponse;
 import com.hwan.coupon.coupon.dto.CreateCouponRequest;
 import com.hwan.coupon.coupon.dto.MonthlyStatsProjection;
 import com.hwan.coupon.coupon.dto.MonthlyStatsResponse;
 import com.hwan.coupon.coupon.dto.MyCouponResponse;
+import com.hwan.coupon.coupon.infra.FirstComeIssuePayload;
+import com.hwan.coupon.coupon.repository.CouponIssueRepository;
+import com.hwan.coupon.coupon.repository.CouponIssueRequestRepository;
+import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.global.config.RabbitMQConfig;
 import com.hwan.coupon.global.exception.BusinessException;
 import com.hwan.coupon.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -39,14 +44,18 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 public class CouponService {
 
-    private static final long REDIS_RESULT_EXHAUSTED      = -1L;
+    private static final long REDIS_RESULT_EXHAUSTED = -1L;
     private static final long REDIS_RESULT_ALREADY_ISSUED = -2L;
 
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
+    private final CouponIssueRequestRepository issueRequestRepository;
     private final CouponRedisService couponRedisService;
     private final CouponCacheService couponCacheService;
-    private final CouponIssueWriter couponIssueWriter;
+    private final RabbitTemplate rabbitTemplate;
+
+    @Value("${coupon.issue.timing-log-enabled:false}")
+    private boolean issueTimingLogEnabled;
 
     @Transactional
     public CouponResponse createCoupon(CreateCouponRequest request) {
@@ -79,41 +88,71 @@ public class CouponService {
         return CouponResponse.from(saved);
     }
 
-    public CouponIssueResponse issueCoupon(Long couponId, Long userId) {
-        CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
-        validateCouponForIssue(cached);
-
-        if (!couponRedisService.hasStock(couponId)) {
-            Coupon coupon = couponRepository.findById(couponId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
-            if (coupon.getTotalQuantity() != null) {
-                int remaining = Math.max(0, coupon.getTotalQuantity() - coupon.getIssuedQuantity());
-                couponRedisService.syncStockIfAbsent(couponId, remaining);
-            }
-        }
-
-        long remaining = couponRedisService.tryIssue(couponId, userId);
-        if (remaining == REDIS_RESULT_EXHAUSTED) {
-            log.warn("쿠폰 소진 couponId={} userId={}", couponId, userId);
-            throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
-        }
-        if (remaining == REDIS_RESULT_ALREADY_ISSUED) {
-            log.warn("중복 발급 시도 couponId={} userId={}", couponId, userId);
-            throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
-        }
-        log.info("쿠폰 발급 성공 couponId={} userId={} remaining={}", couponId, userId, remaining);
+    public CouponIssueAcceptedResponse issueCoupon(Long couponId, Long userId) {
+        long requestStart = System.nanoTime();
+        long cacheValidatedAt = requestStart;
+        long stockReadyAt = requestStart;
+        long redisCheckedAt = requestStart;
+        long requestSavedAt = requestStart;
+        long publishedAt = requestStart;
+        String result = "UNKNOWN";
 
         try {
-            return couponIssueWriter.saveIssue(couponId, userId, remaining);
-        } catch (DataIntegrityViolationException e) {
-            couponRedisService.rollbackStockOnly(couponId);
-            throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            couponRedisService.rollback(couponId, userId);
+            CouponCacheDto cached = couponCacheService.getCouponCache(couponId);
+            validateCouponForIssue(cached);
+            cacheValidatedAt = System.nanoTime();
+
+            if (!couponRedisService.hasStock(couponId)) {
+                Coupon coupon = couponRepository.findById(couponId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
+                if (coupon.getTotalQuantity() != null) {
+                    int remaining = Math.max(0, coupon.getTotalQuantity() - coupon.getIssuedQuantity());
+                    couponRedisService.syncStockIfAbsent(couponId, remaining);
+                }
+            }
+            stockReadyAt = System.nanoTime();
+
+            long remaining = couponRedisService.tryIssue(couponId, userId);
+            redisCheckedAt = System.nanoTime();
+            if (remaining == REDIS_RESULT_EXHAUSTED) {
+                result = "EXHAUSTED";
+                log.warn("쿠폰 소진 couponId={} userId={}", couponId, userId);
+                throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
+            }
+            if (remaining == REDIS_RESULT_ALREADY_ISSUED) {
+                result = "DUPLICATE";
+                log.warn("중복 발급 시도 couponId={} userId={}", couponId, userId);
+                throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
+            }
+            log.info("선착순 당첨 확정 couponId={} userId={} remaining={}", couponId, userId, remaining);
+
+            CouponIssueRequest request = CouponIssueRequest.create(couponId, userId);
+            CouponIssueRequest saved = issueRequestRepository.save(request);
+            requestSavedAt = System.nanoTime();
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.EXCHANGE,
+                    RabbitMQConfig.ROUTING_KEY_FIRST_COME,
+                    new FirstComeIssuePayload(saved.getId(), couponId, userId, remaining)
+            );
+            publishedAt = System.nanoTime();
+            result = "ACCEPTED";
+            log.info("선착순 발급 요청 접수 requestId={} couponId={} userId={}", saved.getId(), couponId, userId);
+
+            CouponIssueAcceptedResponse response = CouponIssueAcceptedResponse.from(saved);
+            logIssueTiming(result, couponId, userId, requestStart, cacheValidatedAt, stockReadyAt, redisCheckedAt, requestSavedAt, publishedAt);
+            return response;
+        } catch (RuntimeException e) {
+            logIssueTiming(result, couponId, userId, requestStart, cacheValidatedAt, stockReadyAt, redisCheckedAt, requestSavedAt, System.nanoTime());
             throw e;
         }
+    }
+
+    @Transactional(readOnly = true)
+    public CouponIssueRequestStatusResponse getIssueRequestStatus(Long requestId) {
+        CouponIssueRequest request = issueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ISSUE_REQUEST_NOT_FOUND));
+        return CouponIssueRequestStatusResponse.from(request);
     }
 
     @Transactional
@@ -149,14 +188,13 @@ public class CouponService {
         Map<Long, Coupon> couponMap = couponRepository.findAllById(couponIds).stream()
                 .collect(Collectors.toMap(Coupon::getId, c -> c));
 
-        // coupon 삭제 API가 없고 비활성화만 존재하므로 coupon_issue가 참조하는 coupon은 항상 존재함
         return issuePage.map(issue -> MyCouponResponse.from(issue, couponMap.get(issue.getCouponId())));
     }
 
     @Transactional(readOnly = true)
     public List<MonthlyStatsResponse> getMonthlyStats(int year) {
         LocalDateTime start = LocalDateTime.of(year, 1, 1, 0, 0, 0);
-        LocalDateTime end   = LocalDateTime.of(year + 1, 1, 1, 0, 0, 0);
+        LocalDateTime end = LocalDateTime.of(year + 1, 1, 1, 0, 0, 0);
 
         Map<String, MonthlyStatsResponse> statsMap = couponIssueRepository.findMonthlyStatsByYear(start, end)
                 .stream()
@@ -194,6 +232,39 @@ public class CouponService {
         Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_NOT_FOUND));
         return CouponResponse.from(coupon);
+    }
+
+    private void logIssueTiming(
+            String result,
+            Long couponId,
+            Long userId,
+            long requestStart,
+            long cacheValidatedAt,
+            long stockReadyAt,
+            long redisCheckedAt,
+            long requestSavedAt,
+            long endAt
+    ) {
+        if (!issueTimingLogEnabled) {
+            return;
+        }
+
+        log.info(
+                "issueCouponTiming result={} couponId={} userId={} cacheValidateMs={} stockSyncMs={} redisTryMs={} requestSaveMs={} publishMs={} totalMs={}",
+                result,
+                couponId,
+                userId,
+                elapsedMillis(requestStart, cacheValidatedAt),
+                elapsedMillis(cacheValidatedAt, stockReadyAt),
+                elapsedMillis(stockReadyAt, redisCheckedAt),
+                elapsedMillis(redisCheckedAt, requestSavedAt),
+                elapsedMillis(requestSavedAt, endAt),
+                elapsedMillis(requestStart, endAt)
+        );
+    }
+
+    private long elapsedMillis(long startNanos, long endNanos) {
+        return Math.max(0L, (endNanos - startNanos) / 1_000_000L);
     }
 
     private void validateCouponForIssue(CouponCacheDto cached) {

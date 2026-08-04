@@ -32,7 +32,10 @@ public enum ErrorCode {
 
     // Batch
     BATCH_NOT_FOUND(404, "배치를 찾을 수 없습니다"),
-    COUPON_ISSUE_TYPE_MISMATCH(400, "관리자 발급 전용 쿠폰이 아닙니다");
+    COUPON_ISSUE_TYPE_MISMATCH(400, "관리자 발급 전용 쿠폰이 아닙니다"),
+
+    // First-come issue request
+    ISSUE_REQUEST_NOT_FOUND(404, "발급 요청을 찾을 수 없습니다");
 
     private final int status;
     private final String message;

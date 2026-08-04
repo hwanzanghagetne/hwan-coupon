@@ -14,8 +14,20 @@ import java.util.List;
 public interface CouponRepository extends JpaRepository<Coupon, Long> {
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + 1, c.updatedAt = :now WHERE c.id = :couponId")
-    void incrementIssuedQuantity(@Param("couponId") Long couponId, @Param("now") LocalDateTime now);
+    @Query("""
+            UPDATE Coupon c
+               SET c.issuedQuantity = c.issuedQuantity + 1,
+                   c.status = CASE
+                       WHEN c.totalQuantity IS NOT NULL AND c.issuedQuantity + 1 >= c.totalQuantity
+                           THEN :exhaustedStatus
+                       ELSE c.status
+                   END,
+                   c.updatedAt = :now
+             WHERE c.id = :couponId
+            """)
+    void incrementIssuedQuantity(@Param("couponId") Long couponId,
+                                 @Param("exhaustedStatus") CouponStatus exhaustedStatus,
+                                 @Param("now") LocalDateTime now);
 
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Coupon c SET c.status = :status, c.updatedAt = :now WHERE c.id = :couponId AND c.status = 'ACTIVE'")
