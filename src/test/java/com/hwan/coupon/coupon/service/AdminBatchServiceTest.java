@@ -17,8 +17,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.transaction.support.TransactionCallback;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -42,9 +40,6 @@ class AdminBatchServiceTest {
 
     @Mock
     private RabbitTemplate rabbitTemplate;
-
-    @Mock
-    private TransactionTemplate transactionTemplate;
 
     private Coupon adminIssuedCoupon() {
         return Coupon.create("관리자발급쿠폰", DiscountType.FIXED, 1000,
@@ -89,11 +84,6 @@ class AdminBatchServiceTest {
         List<Long> userIdsWithDuplicate = List.of(1L, 2L, 3L, 2L, 1L); // 고유: 3명
 
         when(couponRepository.findById(1L)).thenReturn(Optional.of(adminIssuedCoupon()));
-        when(transactionTemplate.execute(any())).thenAnswer(inv -> {
-            TransactionCallback<?> callback = inv.getArgument(0);
-            return callback.doInTransaction(null);
-        });
-
         CouponIssueBatch savedBatch = CouponIssueBatch.create(1L, 3);
         when(batchRepository.save(any())).thenReturn(savedBatch);
 
@@ -109,11 +99,6 @@ class AdminBatchServiceTest {
     @DisplayName("배치 요청 성공 시 RabbitMQ 메시지가 발행된다")
     void requestBatch_성공_메시지_발행() {
         when(couponRepository.findById(1L)).thenReturn(Optional.of(adminIssuedCoupon()));
-        when(transactionTemplate.execute(any())).thenAnswer(inv -> {
-            TransactionCallback<?> callback = inv.getArgument(0);
-            return callback.doInTransaction(null);
-        });
-
         CouponIssueBatch savedBatch = CouponIssueBatch.create(1L, 2);
         when(batchRepository.save(any())).thenReturn(savedBatch);
 

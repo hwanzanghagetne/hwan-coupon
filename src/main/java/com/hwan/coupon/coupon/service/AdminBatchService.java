@@ -16,7 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -28,7 +27,6 @@ public class AdminBatchService {
     private final CouponRepository couponRepository;
     private final CouponIssueBatchRepository batchRepository;
     private final RabbitTemplate rabbitTemplate;
-    private final TransactionTemplate transactionTemplate;
 
     public BatchIssueResponse requestBatch(Long couponId, List<Long> userIds) {
         Coupon coupon = couponRepository.findById(couponId)
