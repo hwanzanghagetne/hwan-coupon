@@ -124,6 +124,14 @@ class AdminBatchIntegrationTest {
         assertThat(response.batchId()).isNotNull();
         assertThat(response.targetCount()).isEqualTo(testUserIds.size());
         assertThat(response.completedAt()).isNull();
+
+        // 컨슈머가 비동기로 처리 중인 배치가 남아있으면 tearDown()의 삭제와 경합해
+        // FK 위반이 날 수 있어, 다른 테스트들처럼 종료 상태까지 기다린 뒤 끝낸다.
+        await().atMost(5, TimeUnit.SECONDS).until(() ->
+                batchRepository.findById(response.batchId())
+                        .map(b -> b.getStatus() == BatchStatus.DONE || b.getStatus() == BatchStatus.FAILED)
+                        .orElse(false)
+        );
     }
 
     @Test

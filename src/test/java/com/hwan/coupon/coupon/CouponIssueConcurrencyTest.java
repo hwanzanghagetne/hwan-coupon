@@ -92,15 +92,14 @@ class CouponIssueConcurrencyTest {
         );
         couponId = couponRepository.save(coupon).getId();
 
-        // coupon_issue / coupon_issue_request가 member(id)를 참조하는 FK가 걸려있어서,
+        // coupon_issue가 member(id)를 참조하는 FK가 걸려있어서,
         // 실제 member row가 없으면 발급이 FK 위반으로 실패한다.
         createMembers(THREAD_COUNT);
     }
 
     @AfterEach
     void tearDown() {
-        couponIssueRepository.deleteByCouponId(couponId);
-        jdbcTemplate.update("DELETE FROM coupon_issue_request WHERE coupon_id = ?", couponId);
+        jdbcTemplate.update("DELETE FROM coupon_issue WHERE coupon_id = ?", couponId);
         couponRepository.deleteById(couponId);
         jdbcTemplate.update("DELETE FROM member WHERE id BETWEEN 1 AND ?", THREAD_COUNT);
     }
