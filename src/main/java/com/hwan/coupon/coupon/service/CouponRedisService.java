@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -67,5 +68,10 @@ public class CouponRedisService {
     public Long getRemainingStock(Long couponId) {
         String value = redisTemplate.opsForValue().get(STOCK_KEY + couponId);
         return value == null ? null : Long.valueOf(value);
+    }
+
+    public Set<String> getIssuedUserIds(Long couponId) {
+        Set<String> members = redisTemplate.opsForSet().members(ISSUED_KEY + couponId);
+        return members == null ? Set.of() : members;
     }
 }

@@ -21,6 +21,9 @@ public interface CouponIssueRepository extends JpaRepository<CouponIssue, Long> 
 
     long countByCouponId(Long couponId);
 
+    @Query("SELECT ci.userId FROM CouponIssue ci WHERE ci.couponId = :couponId")
+    List<Long> findUserIdsByCouponId(@Param("couponId") Long couponId);
+
     @Modifying(clearAutomatically = true)
     @Query("DELETE FROM CouponIssue ci WHERE ci.couponId = :couponId")
     void deleteByCouponId(@Param("couponId") Long couponId);

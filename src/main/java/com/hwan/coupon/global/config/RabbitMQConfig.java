@@ -1,6 +1,7 @@
 package com.hwan.coupon.global.config;
 
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
@@ -99,5 +100,22 @@ public class RabbitMQConfig {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(messageConverter());
         return template;
+    }
+
+    // 선착순 발급 배치 컨슈머 전용 팩토리 — 짧은 주기로 모은 메시지를 하나의 DB 트랜잭션으로
+    // 반영한 뒤에만 ack한다(AcknowledgeMode.MANUAL). 동시 소비자를 1개로 고정해 DB 쓰기
+    // 주체를 하나로 유지한다.
+    @Bean
+    public SimpleRabbitListenerContainerFactory firstComeBatchContainerFactory(ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(messageConverter());
+        factory.setConsumerBatchEnabled(true);
+        factory.setBatchSize(500);
+        factory.setBatchReceiveTimeout(200L);
+        factory.setConcurrentConsumers(1);
+        factory.setMaxConcurrentConsumers(1);
+        factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
+        return factory;
     }
 }

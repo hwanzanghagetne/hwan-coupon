@@ -2,6 +2,7 @@ package com.hwan.coupon.coupon.repository;
 
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponStatus;
+import com.hwan.coupon.coupon.domain.IssueType;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -36,6 +37,25 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + :count, c.updatedAt = :now WHERE c.id = :couponId")
     void incrementIssuedQuantityBy(@Param("couponId") Long couponId, @Param("count") int count, @Param("now") LocalDateTime now);
+
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Coupon c
+               SET c.issuedQuantity = c.issuedQuantity + :count,
+                   c.status = CASE
+                       WHEN c.totalQuantity IS NOT NULL AND c.issuedQuantity + :count >= c.totalQuantity
+                           THEN :exhaustedStatus
+                       ELSE c.status
+                   END,
+                   c.updatedAt = :now
+             WHERE c.id = :couponId
+            """)
+    void incrementIssuedQuantityByAndMarkExhausted(@Param("couponId") Long couponId,
+                                                    @Param("count") int count,
+                                                    @Param("exhaustedStatus") CouponStatus exhaustedStatus,
+                                                    @Param("now") LocalDateTime now);
+
+    List<Coupon> findByIssueTypeAndStatusIn(IssueType issueType, List<CouponStatus> statuses);
 
     @Query("SELECT c.id FROM Coupon c WHERE c.status = :status AND c.expiredAt < :now")
     List<Long> findExpiredActiveCouponIds(@Param("status") CouponStatus status, @Param("now") LocalDateTime now);

@@ -3,7 +3,6 @@ package com.hwan.coupon.demo;
 import com.hwan.coupon.coupon.domain.BatchStatus;
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponIssueBatch;
-import com.hwan.coupon.coupon.domain.CouponIssueRequestStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
 import com.hwan.coupon.coupon.dto.BatchIssueResponse;
@@ -11,7 +10,6 @@ import com.hwan.coupon.coupon.dto.CouponResponse;
 import com.hwan.coupon.coupon.dto.CreateCouponRequest;
 import com.hwan.coupon.coupon.repository.CouponIssueBatchRepository;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
-import com.hwan.coupon.coupon.repository.CouponIssueRequestRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
 import com.hwan.coupon.coupon.service.AdminBatchService;
 import com.hwan.coupon.coupon.service.CouponRedisService;
@@ -59,7 +57,6 @@ public class DemoScenarioService {
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
     private final CouponIssueBatchRepository batchRepository;
-    private final CouponIssueRequestRepository issueRequestRepository;
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final CouponRedisService couponRedisService;
@@ -75,6 +72,7 @@ public class DemoScenarioService {
             throw new BusinessException(ErrorCode.COUPON_FIRST_COME_REQUIRES_QUANTITY);
         }
 
+        long baselineIssuedRows = couponIssueRepository.countByCouponId(coupon.getId());
         List<Long> userIds = createDemoUsers("fc", request.requestUserCount());
         int effectiveThreads = Math.min(request.threadCount(), request.requestUserCount());
         ExecutorService executor = Executors.newFixedThreadPool(effectiveThreads);
@@ -121,7 +119,7 @@ public class DemoScenarioService {
         }
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
-        waitForFirstComeCompletion(coupon.getId());
+        waitForFirstComeCompletion(coupon.getId(), baselineIssuedRows + successCount.get());
 
         Coupon savedCoupon = couponRepository.findById(coupon.getId()).orElseThrow();
         long issuedRows = couponIssueRepository.countByCouponId(coupon.getId());
@@ -246,13 +244,13 @@ public class DemoScenarioService {
         return latest;
     }
 
-    // 큐에 접수된 선착순 발급 요청이 전부 SUCCESS/FAILED로 마무리될 때까지 대기.
-    // FirstComeIssueProcessor가 순차 처리하므로, 접수 직후엔 아직 PENDING/PROCESSING일 수 있다.
-    private void waitForFirstComeCompletion(Long couponId) {
+    // 큐에 쌓인 당첨자가 FirstComeIssueProcessor의 배치 반영으로 coupon_issue에 전부
+    // 실제 반영될 때까지 대기. 개별 요청 상태 추적이 없으므로, 실행 전 기준 행 수 +
+    // 이번에 큐 접수에 성공한 개수만큼 늘어났는지로 완료 여부를 판단한다.
+    private void waitForFirstComeCompletion(Long couponId, long expectedIssuedRows) {
         for (int i = 0; i < FIRST_COME_POLL_LIMIT; i++) {
-            long inFlight = issueRequestRepository.countByCouponIdAndStatusIn(
-                    couponId, List.of(CouponIssueRequestStatus.PENDING, CouponIssueRequestStatus.PROCESSING));
-            if (inFlight == 0) {
+            long issuedRows = couponIssueRepository.countByCouponId(couponId);
+            if (issuedRows >= expectedIssuedRows) {
                 return;
             }
             try {

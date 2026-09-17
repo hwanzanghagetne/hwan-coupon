@@ -1,67 +1,57 @@
 package com.hwan.coupon.coupon.infra;
 
-import com.hwan.coupon.coupon.domain.CouponIssueRequestStatus;
-import com.hwan.coupon.coupon.repository.CouponIssueRequestRepository;
 import com.hwan.coupon.coupon.service.CouponIssueWriter;
-import com.hwan.coupon.coupon.service.CouponRedisService;
-
 import com.hwan.coupon.global.config.RabbitMQConfig;
+import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.LocalDateTime;
+import java.io.IOException;
+import java.util.List;
 
 /**
- * 선착순 발급 요청을 큐에서 하나씩 순차 소비해 DB에 반영하는 컨슈머.
+ * 선착순 발급 당첨자를 짧은 주기(최대 200ms 또는 500건)로 모아 한 번에 DB에 반영하는 컨슈머.
  *
- * 당첨자 100명이 동시에 coupon/coupon_issue를 건드리며 생기던 데드락은,
- * 이 컨슈머가 메시지를 한 번에 하나씩만 처리하도록 만들어 동시 쓰기 자체를
- * 없애서 구조적으로 제거한다(관리자 대량발급의 BatchProcessor와 동일한 패턴).
+ * 메시지를 받는 즉시 ack하지 않는다({@link org.springframework.amqp.core.AcknowledgeMode#MANUAL}).
+ * {@link CouponIssueWriter#saveIssueBatch}가 DB 트랜잭션을 커밋한 뒤에만 배치 전체를 ack하므로,
+ * 커밋 전에 컨슈머가 죽어도 메시지는 재전달된다(재전달돼도 coupon_issue의
+ * UNIQUE(coupon_id, user_id) + INSERT IGNORE로 중복 삽입은 안전하게 무시된다).
  *
- * updateStatusIfMatch/markFailed는 커스텀 @Modifying 쿼리라, save()/findById()와
- * 달리 활성 트랜잭션이 없으면 TransactionRequiredException이 난다(BatchProcessor가
- * TransactionTemplate으로 감싸는 것과 같은 이유). saveIssue()는 자체 @Transactional이
- * 있어 별도로 감쌀 필요 없다.
+ * 동시 소비자를 1개로 고정({@link RabbitMQConfig#firstComeBatchContainerFactory})해
+ * DB에 동시에 쓰는 주체가 여러 개가 되는 상황을 막는다.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class FirstComeIssueProcessor {
 
-    private final CouponIssueRequestRepository issueRequestRepository;
     private final CouponIssueWriter couponIssueWriter;
-    private final CouponRedisService couponRedisService;
-    private final TransactionTemplate transactionTemplate;
+    private final MessageConverter messageConverter;
 
-    @RabbitListener(queues = RabbitMQConfig.QUEUE_FIRST_COME)
-    public void processIssueRequest(FirstComeIssuePayload payload) {
-        Long requestId = payload.requestId();
-
-        int claimed = transactionTemplate.execute(status -> issueRequestRepository.updateStatusIfMatch(
-                requestId, CouponIssueRequestStatus.PENDING, CouponIssueRequestStatus.PROCESSING, LocalDateTime.now()));
-        if (claimed == 0) {
-            log.warn("이미 처리(선점)된 발급 요청 무시 requestId={}", requestId);
+    @RabbitListener(queues = RabbitMQConfig.QUEUE_FIRST_COME, containerFactory = "firstComeBatchContainerFactory")
+    public void processBatch(List<Message> messages, Channel channel) throws IOException {
+        if (messages.isEmpty()) {
             return;
         }
 
+        long lastDeliveryTag = messages.get(messages.size() - 1).getMessageProperties().getDeliveryTag();
+
         try {
-            couponIssueWriter.saveIssue(requestId, payload.couponId(), payload.userId(), payload.remaining());
-            log.info("선착순 발급 처리 완료 requestId={} couponId={} userId={}",
-                    requestId, payload.couponId(), payload.userId());
-        } catch (DataIntegrityViolationException e) {
-            // coupon_issue의 UNIQUE(user_id, coupon_id) 위반 — Redis 판정을 뚫고 들어온 중복
-            couponRedisService.rollbackStockOnly(payload.couponId());
-            transactionTemplate.executeWithoutResult(status ->
-                    issueRequestRepository.markFailed(requestId, "이미 발급된 쿠폰입니다", LocalDateTime.now()));
+            List<FirstComeIssuePayload> payloads = messages.stream()
+                    .map(m -> (FirstComeIssuePayload) messageConverter.fromMessage(m))
+                    .toList();
+
+            int inserted = couponIssueWriter.saveIssueBatch(payloads);
+            log.info("선착순 배치 반영 완료 messageCount={} insertedCount={}", payloads.size(), inserted);
+
+            channel.basicAck(lastDeliveryTag, true);
         } catch (Exception e) {
-            log.error("선착순 발급 처리 실패 requestId={} error={}", requestId, e.getMessage(), e);
-            couponRedisService.rollback(payload.couponId(), payload.userId());
-            transactionTemplate.executeWithoutResult(status ->
-                    issueRequestRepository.markFailed(requestId, "발급 처리 중 오류가 발생했습니다", LocalDateTime.now()));
+            log.error("선착순 배치 반영 실패, 메시지 재전달 요청 messageCount={} error={}", messages.size(), e.getMessage(), e);
+            channel.basicNack(lastDeliveryTag, true, true);
         }
     }
 }

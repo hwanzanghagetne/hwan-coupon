@@ -1,9 +1,6 @@
 package com.hwan.coupon.coupon.service;
 
 import com.hwan.coupon.coupon.domain.Coupon;
-import com.hwan.coupon.coupon.domain.CouponIssue;
-import com.hwan.coupon.coupon.domain.CouponIssueRequest;
-import com.hwan.coupon.coupon.domain.CouponIssueRequestStatus;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
@@ -12,7 +9,6 @@ import com.hwan.coupon.coupon.dto.CouponCacheDto;
 import com.hwan.coupon.coupon.dto.CouponIssueAcceptedResponse;
 import com.hwan.coupon.coupon.infra.FirstComeIssuePayload;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
-import com.hwan.coupon.coupon.repository.CouponIssueRequestRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
 import com.hwan.coupon.global.config.RabbitMQConfig;
 import com.hwan.coupon.global.exception.BusinessException;
@@ -48,9 +44,6 @@ class CouponServiceTest {
 
     @Mock
     private CouponIssueRepository couponIssueRepository;
-
-    @Mock
-    private CouponIssueRequestRepository issueRequestRepository;
 
     @Mock
     private CouponRedisService couponRedisService;
@@ -140,26 +133,21 @@ class CouponServiceTest {
     }
 
     @Test
-    @DisplayName("정상 발급 요청 시 접수 상태(PENDING)를 반환하고 큐에 메시지를 발행한다")
+    @DisplayName("정상 발급 요청 시 접수 응답을 반환하고 큐에 메시지를 발행한다")
     void issueCoupon_성공() {
         CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
-        CouponIssueRequest savedRequest = CouponIssueRequest.create(1L, 1L);
-        ReflectionTestUtils.setField(savedRequest, "id", 10L);
 
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
         when(couponRedisService.tryIssue(1L, 1L)).thenReturn(5L);
-        when(issueRequestRepository.save(any())).thenReturn(savedRequest);
 
         CouponIssueAcceptedResponse response = couponService.issueCoupon(1L, 1L);
 
-        assertThat(response.requestId()).isEqualTo(10L);
         assertThat(response.couponId()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo(CouponIssueRequestStatus.PENDING);
         verify(rabbitTemplate).convertAndSend(
                 eq(RabbitMQConfig.EXCHANGE),
                 eq(RabbitMQConfig.ROUTING_KEY_FIRST_COME),
-                any(FirstComeIssuePayload.class)
+                eq(new FirstComeIssuePayload(1L, 1L))
         );
     }
 

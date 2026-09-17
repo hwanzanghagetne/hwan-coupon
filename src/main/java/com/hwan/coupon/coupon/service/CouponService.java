@@ -2,12 +2,10 @@ package com.hwan.coupon.coupon.service;
 
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponIssue;
-import com.hwan.coupon.coupon.domain.CouponIssueRequest;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.IssueType;
 import com.hwan.coupon.coupon.dto.CouponCacheDto;
 import com.hwan.coupon.coupon.dto.CouponIssueAcceptedResponse;
-import com.hwan.coupon.coupon.dto.CouponIssueRequestStatusResponse;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
 import com.hwan.coupon.coupon.dto.CouponResponse;
 import com.hwan.coupon.coupon.dto.CreateCouponRequest;
@@ -16,7 +14,6 @@ import com.hwan.coupon.coupon.dto.MonthlyStatsResponse;
 import com.hwan.coupon.coupon.dto.MyCouponResponse;
 import com.hwan.coupon.coupon.infra.FirstComeIssuePayload;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
-import com.hwan.coupon.coupon.repository.CouponIssueRequestRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
 import com.hwan.coupon.global.config.RabbitMQConfig;
 import com.hwan.coupon.global.exception.BusinessException;
@@ -49,7 +46,6 @@ public class CouponService {
 
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
-    private final CouponIssueRequestRepository issueRequestRepository;
     private final CouponRedisService couponRedisService;
     private final CouponCacheService couponCacheService;
     private final RabbitTemplate rabbitTemplate;
@@ -125,34 +121,24 @@ public class CouponService {
                 throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
             }
             log.info("선착순 당첨 확정 couponId={} userId={} remaining={}", couponId, userId, remaining);
-
-            CouponIssueRequest request = CouponIssueRequest.create(couponId, userId);
-            CouponIssueRequest saved = issueRequestRepository.save(request);
             requestSavedAt = System.nanoTime();
 
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.EXCHANGE,
                     RabbitMQConfig.ROUTING_KEY_FIRST_COME,
-                    new FirstComeIssuePayload(saved.getId(), couponId, userId, remaining)
+                    new FirstComeIssuePayload(couponId, userId)
             );
             publishedAt = System.nanoTime();
             result = "ACCEPTED";
-            log.info("선착순 발급 요청 접수 requestId={} couponId={} userId={}", saved.getId(), couponId, userId);
+            log.info("선착순 발급 요청 접수 couponId={} userId={}", couponId, userId);
 
-            CouponIssueAcceptedResponse response = CouponIssueAcceptedResponse.from(saved);
+            CouponIssueAcceptedResponse response = CouponIssueAcceptedResponse.of(couponId);
             logIssueTiming(result, couponId, userId, requestStart, cacheValidatedAt, stockReadyAt, redisCheckedAt, requestSavedAt, publishedAt);
             return response;
         } catch (RuntimeException e) {
             logIssueTiming(result, couponId, userId, requestStart, cacheValidatedAt, stockReadyAt, redisCheckedAt, requestSavedAt, System.nanoTime());
             throw e;
         }
-    }
-
-    @Transactional(readOnly = true)
-    public CouponIssueRequestStatusResponse getIssueRequestStatus(Long requestId) {
-        CouponIssueRequest request = issueRequestRepository.findById(requestId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ISSUE_REQUEST_NOT_FOUND));
-        return CouponIssueRequestStatusResponse.from(request);
     }
 
     @Transactional
