@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -29,6 +30,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(401)
                 .body(new ErrorResponse(401, "이메일 또는 비밀번호가 올바르지 않습니다"));
+    }
+
+    // @PreAuthorize 권한 검증 실패 시 발생 — 이 핸들러가 없으면 catch-all(Exception.class)에
+    // 걸려 403 대신 500으로 응답하게 된다.
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDeniedException(AccessDeniedException e) {
+        return ResponseEntity
+                .status(403)
+                .body(new ErrorResponse(403, "권한이 없습니다"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
