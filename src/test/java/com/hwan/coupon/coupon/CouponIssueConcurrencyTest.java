@@ -5,6 +5,7 @@ import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
+import com.hwan.coupon.coupon.service.CouponRedisService;
 import com.hwan.coupon.coupon.service.CouponService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,8 +75,12 @@ class CouponIssueConcurrencyTest {
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private CouponRedisService couponRedisService;
+
     private Long couponId;
     private static final int THREAD_COUNT = 100;
+    private static final int TOTAL_QUANTITY = 50;
 
     @BeforeEach
     void setUp() {
@@ -83,7 +88,7 @@ class CouponIssueConcurrencyTest {
                 "동시성테스트쿠폰",
                 DiscountType.FIXED,
                 1000,
-                50,
+                TOTAL_QUANTITY,
                 null,
                 IssueType.FIRST_COME,
                 null,
@@ -91,6 +96,11 @@ class CouponIssueConcurrencyTest {
                 LocalDateTime.now().plusDays(30)
         );
         couponId = couponRepository.save(coupon).getId();
+
+        // CouponService.createCoupon()을 거치지 않고 리포지토리로 직접 생성하므로,
+        // 그 경로에서 자동으로 되던 Redis 재고 초기화를 여기서 직접 해줘야 한다.
+        // issueCoupon()은 이제 재고 키가 없으면 자동 복구하지 않고 거절하므로 필수.
+        couponRedisService.initStock(couponId, TOTAL_QUANTITY);
 
         // coupon_issue가 member(id)를 참조하는 FK가 걸려있어서,
         // 실제 member row가 없으면 발급이 FK 위반으로 실패한다.
@@ -126,7 +136,7 @@ class CouponIssueConcurrencyTest {
     @Test
     @DisplayName("재고(50)보다 많은 100명이 동시에 요청해도 정확히 50건만 발급된다")
     void 동시에_100명_발급요청_재고초과_방지() throws InterruptedException {
-        int totalQuantity = 50;
+        int totalQuantity = TOTAL_QUANTITY;
         ExecutorService executor = Executors.newFixedThreadPool(32);
         CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
 

@@ -22,6 +22,11 @@ public class CouponIssueBatch {
     @Column(nullable = false)
     private int targetCount;
 
+    // BatchProcessor의 INSERT IGNORE가 실제로 삽입한 행 수만 누적한다.
+    // "시도한 대상 수"가 아니라 "새로 발급된 수"를 뜻한다.
+    @Column(nullable = false)
+    private int issuedCount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private BatchStatus status;
@@ -38,6 +43,7 @@ public class CouponIssueBatch {
         CouponIssueBatch batch = new CouponIssueBatch();
         batch.couponId = couponId;
         batch.targetCount = targetCount;
+        batch.issuedCount = 0;
         batch.status = BatchStatus.PENDING;
         batch.requestedAt = LocalDateTime.now();
         batch.updatedAt = batch.requestedAt;

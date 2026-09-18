@@ -10,6 +10,7 @@ public record BatchIssueResponse(
         Long couponId,
         BatchStatus status,
         int targetCount,
+        int issuedCount,
         LocalDateTime requestedAt,
         LocalDateTime completedAt
 ) {
@@ -19,6 +20,7 @@ public record BatchIssueResponse(
                 batch.getCouponId(),
                 batch.getStatus(),
                 batch.getTargetCount(),
+                batch.getIssuedCount(),
                 batch.getRequestedAt(),
                 batch.getCompletedAt()
         );

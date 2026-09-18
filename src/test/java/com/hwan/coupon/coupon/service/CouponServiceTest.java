@@ -23,13 +23,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+import org.springframework.amqp.AmqpException;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +58,9 @@ class CouponServiceTest {
 
     @Mock
     private RabbitTemplate rabbitTemplate;
+
+    @Mock
+    private MessageConverter messageConverter;
 
     // ---- issueCoupon ----
 
@@ -136,19 +144,51 @@ class CouponServiceTest {
     @DisplayName("정상 발급 요청 시 접수 응답을 반환하고 큐에 메시지를 발행한다")
     void issueCoupon_성공() {
         CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
+        Message convertedMessage = mock(Message.class);
 
         when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
         when(couponRedisService.hasStock(1L)).thenReturn(true);
+        when(messageConverter.toMessage(eq(new FirstComeIssuePayload(1L, 1L)), any())).thenReturn(convertedMessage);
         when(couponRedisService.tryIssue(1L, 1L)).thenReturn(5L);
 
         CouponIssueAcceptedResponse response = couponService.issueCoupon(1L, 1L);
 
         assertThat(response.couponId()).isEqualTo(1L);
-        verify(rabbitTemplate).convertAndSend(
-                eq(RabbitMQConfig.EXCHANGE),
-                eq(RabbitMQConfig.ROUTING_KEY_FIRST_COME),
-                eq(new FirstComeIssuePayload(1L, 1L))
-        );
+        assertThat(response.sendReturned()).isTrue();
+        verify(rabbitTemplate).send(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_FIRST_COME, convertedMessage);
+    }
+
+    @Test
+    @DisplayName("Redis 재고 키가 없으면 자동 복구하지 않고 발급을 거절한다")
+    void issueCoupon_Redis키없음_거절() {
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
+        when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
+        when(couponRedisService.hasStock(1L)).thenReturn(false);
+
+        assertThatThrownBy(() -> couponService.issueCoupon(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_STOCK_TEMPORARILY_UNAVAILABLE);
+
+        verify(couponRedisService, never()).tryIssue(any(), any());
+    }
+
+    @Test
+    @DisplayName("발행 중 연결 오류가 나면 롤백 없이 미확정 응답을 반환한다")
+    void issueCoupon_발행연결오류_미확정응답() {
+        CouponCacheDto cached = new CouponCacheDto(1L, CouponStatus.ACTIVE, FIRST_COME, LocalDateTime.now().plusDays(1), null, null, null);
+        Message convertedMessage = mock(Message.class);
+
+        when(couponCacheService.getCouponCache(1L)).thenReturn(cached);
+        when(couponRedisService.hasStock(1L)).thenReturn(true);
+        when(messageConverter.toMessage(eq(new FirstComeIssuePayload(1L, 1L)), any())).thenReturn(convertedMessage);
+        when(couponRedisService.tryIssue(1L, 1L)).thenReturn(5L);
+        org.mockito.Mockito.doThrow(new org.springframework.amqp.AmqpConnectException(new RuntimeException("connection refused")))
+                .when(rabbitTemplate).send(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_FIRST_COME, convertedMessage);
+
+        CouponIssueAcceptedResponse response = couponService.issueCoupon(1L, 1L);
+
+        assertThat(response.sendReturned()).isFalse();
     }
 
     // ---- useCoupon ----

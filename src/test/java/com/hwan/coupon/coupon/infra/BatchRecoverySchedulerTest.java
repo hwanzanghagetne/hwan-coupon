@@ -10,14 +10,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -33,106 +34,85 @@ class BatchRecoverySchedulerTest {
     @Mock
     private TransactionTemplate transactionTemplate;
 
-    private CouponIssueBatch pendingBatch(Long id) {
+    private CouponIssueBatch batch(Long id, BatchStatus status) {
         CouponIssueBatch batch = CouponIssueBatch.create(1L, 10);
         ReflectionTestUtils.setField(batch, "id", id);
-        // requestedAt을 6분 전으로 설정하여 5분 임계값 초과
-        ReflectionTestUtils.setField(batch, "requestedAt", LocalDateTime.now().minusMinutes(6));
+        ReflectionTestUtils.setField(batch, "status", status);
         return batch;
     }
 
-    private CouponIssueBatch processingBatch(Long id) {
-        CouponIssueBatch batch = CouponIssueBatch.create(1L, 10);
-        ReflectionTestUtils.setField(batch, "id", id);
-        // requestedAt을 11분 전으로 설정하여 10분 임계값 초과
-        ReflectionTestUtils.setField(batch, "requestedAt", LocalDateTime.now().minusMinutes(11));
-        // PROCESSING 상태로 직접 주입 (markProcessing()은 제거됨 — 실제 전환은 updateStatusIfMatch()가 처리)
-        ReflectionTestUtils.setField(batch, "status", BatchStatus.PROCESSING);
-        return batch;
+    private void stubTransactionTemplateToRunCallback() {
+        when(transactionTemplate.execute(any())).thenAnswer(inv -> {
+            TransactionCallback<?> callback = inv.getArgument(0);
+            return callback.doInTransaction(null);
+        });
     }
 
     @Test
     @DisplayName("고착 배치가 없으면 아무 처리도 하지 않는다")
     void recoverStuckBatches_고착배치없음_조기반환() {
-        when(batchRepository.findByStatusAndRequestedAtBefore(any(), any()))
+        when(batchRepository.findByStatusAndUpdatedAtBefore(any(), any()))
                 .thenReturn(List.of());
 
         batchRecoveryScheduler.recoverStuckBatches();
 
-        verify(transactionTemplate, never()).executeWithoutResult(any());
+        verify(transactionTemplate, never()).execute(any());
     }
 
     @Test
-    @DisplayName("PENDING 고착 배치를 FAILED로 마킹한다")
+    @DisplayName("PENDING 고착 배치를 조건부 UPDATE로 FAILED 처리한다")
     void recoverStuckBatches_PENDING배치_FAILED처리() {
-        CouponIssueBatch stuck = pendingBatch(100L);
-        when(batchRepository.findByStatusAndRequestedAtBefore(eq(BatchStatus.PENDING), any()))
+        CouponIssueBatch stuck = batch(100L, BatchStatus.PENDING);
+        when(batchRepository.findByStatusAndUpdatedAtBefore(eq(BatchStatus.PENDING), any()))
                 .thenReturn(List.of(stuck));
-        when(batchRepository.findByStatusAndRequestedAtBefore(eq(BatchStatus.PROCESSING), any()))
+        when(batchRepository.findByStatusAndUpdatedAtBefore(eq(BatchStatus.PROCESSING), any()))
                 .thenReturn(List.of());
-
-        doAnswer(inv -> {
-            var consumer = inv.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0);
-            consumer.accept(null);
-            return null;
-        }).when(transactionTemplate).executeWithoutResult(any());
-
-        CouponIssueBatch fresh = pendingBatch(100L);
-        when(batchRepository.findById(100L)).thenReturn(Optional.of(fresh));
+        stubTransactionTemplateToRunCallback();
+        when(batchRepository.markFailedIfStale(eq(100L), eq(BatchStatus.PENDING), any(), any()))
+                .thenReturn(1);
 
         batchRecoveryScheduler.recoverStuckBatches();
 
-        assertThat(fresh.getStatus()).isEqualTo(BatchStatus.FAILED);
-        assertThat(fresh.getCompletedAt()).isNotNull();
+        verify(batchRepository).markFailedIfStale(eq(100L), eq(BatchStatus.PENDING), any(), any());
     }
 
     @Test
-    @DisplayName("PROCESSING 고착 배치를 FAILED로 마킹한다")
+    @DisplayName("PROCESSING 고착 배치를 조건부 UPDATE로 FAILED 처리한다")
     void recoverStuckBatches_PROCESSING배치_FAILED처리() {
-        CouponIssueBatch stuck = processingBatch(200L);
-        when(batchRepository.findByStatusAndRequestedAtBefore(eq(BatchStatus.PENDING), any()))
+        CouponIssueBatch stuck = batch(200L, BatchStatus.PROCESSING);
+        when(batchRepository.findByStatusAndUpdatedAtBefore(eq(BatchStatus.PENDING), any()))
                 .thenReturn(List.of());
-        when(batchRepository.findByStatusAndRequestedAtBefore(eq(BatchStatus.PROCESSING), any()))
+        when(batchRepository.findByStatusAndUpdatedAtBefore(eq(BatchStatus.PROCESSING), any()))
                 .thenReturn(List.of(stuck));
-
-        doAnswer(inv -> {
-            var consumer = inv.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0);
-            consumer.accept(null);
-            return null;
-        }).when(transactionTemplate).executeWithoutResult(any());
-
-        CouponIssueBatch fresh = processingBatch(200L);
-        when(batchRepository.findById(200L)).thenReturn(Optional.of(fresh));
+        stubTransactionTemplateToRunCallback();
+        when(batchRepository.markFailedIfStale(eq(200L), eq(BatchStatus.PROCESSING), any(), any()))
+                .thenReturn(1);
 
         batchRecoveryScheduler.recoverStuckBatches();
 
-        assertThat(fresh.getStatus()).isEqualTo(BatchStatus.FAILED);
-        assertThat(fresh.getCompletedAt()).isNotNull();
+        verify(batchRepository).markFailedIfStale(eq(200L), eq(BatchStatus.PROCESSING), any(), any());
     }
 
     @Test
-    @DisplayName("조회 시점엔 고착이었지만 처리 직전 이미 완료된 배치는 상태를 변경하지 않는다")
-    void recoverStuckBatches_이미처리된배치_스킵() {
-        CouponIssueBatch stuckInList = pendingBatch(300L);
-        when(batchRepository.findByStatusAndRequestedAtBefore(eq(BatchStatus.PENDING), any()))
-                .thenReturn(List.of(stuckInList));
-        when(batchRepository.findByStatusAndRequestedAtBefore(eq(BatchStatus.PROCESSING), any()))
+    @DisplayName("조회 이후 정상 진행되어 조건이 더 이상 맞지 않으면 조건부 UPDATE가 0건이라 아무 것도 바뀌지 않는다")
+    void recoverStuckBatches_조회이후진행됨_조건불일치로_스킵() {
+        // BatchProcessor가 조회 직후 청크를 커밋해 updatedAt을 갱신한 상황을 가정.
+        // markFailedIfStale의 WHERE 조건(status + updatedAt < threshold)이 더 이상 맞지 않아
+        // 실제 DB에서는 0건이 갱신된다 — 이 스케줄러 코드는 그 반환값만으로 판단하므로
+        // 엔티티를 다시 읽어 상태를 확인할 필요가 없다.
+        CouponIssueBatch stuckAtQueryTime = batch(300L, BatchStatus.PROCESSING);
+        when(batchRepository.findByStatusAndUpdatedAtBefore(eq(BatchStatus.PENDING), any()))
                 .thenReturn(List.of());
-
-        doAnswer(inv -> {
-            var consumer = inv.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0);
-            consumer.accept(null);
-            return null;
-        }).when(transactionTemplate).executeWithoutResult(any());
-
-        // fresh 조회 시엔 이미 DONE 상태
-        CouponIssueBatch alreadyDone = CouponIssueBatch.create(1L, 10);
-        ReflectionTestUtils.setField(alreadyDone, "id", 300L);
-        alreadyDone.markDone();
-        when(batchRepository.findById(300L)).thenReturn(Optional.of(alreadyDone));
+        when(batchRepository.findByStatusAndUpdatedAtBefore(eq(BatchStatus.PROCESSING), any()))
+                .thenReturn(List.of(stuckAtQueryTime));
+        stubTransactionTemplateToRunCallback();
+        when(batchRepository.markFailedIfStale(eq(300L), eq(BatchStatus.PROCESSING), any(), any()))
+                .thenReturn(0);
 
         batchRecoveryScheduler.recoverStuckBatches();
 
-        assertThat(alreadyDone.getStatus()).isEqualTo(BatchStatus.DONE);
+        verify(batchRepository).markFailedIfStale(eq(300L), eq(BatchStatus.PROCESSING), any(), any());
+        // 0건 갱신이므로 배치 자체를 findById로 다시 읽어 도메인 메서드를 호출하는 일이 없어야 한다.
+        verify(batchRepository, never()).findById(anyLong());
     }
 }

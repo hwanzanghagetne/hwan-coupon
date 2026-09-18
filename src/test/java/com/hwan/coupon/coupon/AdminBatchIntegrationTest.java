@@ -6,6 +6,8 @@ import com.hwan.coupon.coupon.domain.CouponIssueBatch;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
 import com.hwan.coupon.coupon.dto.BatchIssueResponse;
+import com.hwan.coupon.coupon.infra.BatchMessagePayload;
+import com.hwan.coupon.coupon.infra.BatchProcessor;
 import com.hwan.coupon.coupon.repository.CouponIssueBatchRepository;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
@@ -68,6 +70,7 @@ class AdminBatchIntegrationTest {
     @Autowired private CouponIssueRepository couponIssueRepository;
     @Autowired private CouponIssueBatchRepository batchRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private BatchProcessor batchProcessor;
 
     private Long couponId;
     private final List<Long> testUserIds = List.of(10001L, 10002L, 10003L, 10004L, 10005L);
@@ -219,5 +222,77 @@ class AdminBatchIntegrationTest {
 
         int issuedQuantity = couponRepository.findById(couponId).orElseThrow().getIssuedQuantity();
         assertThat(issuedQuantity).isEqualTo(1_000);
+    }
+
+    @Test
+    @DisplayName("청크 경계(1,000건)를 넘는 대상도 여러 청크에 걸쳐 정확히 발급되고 배치의 issuedCount와 일치한다")
+    void 청크_여러개_처리시_전체_수량_및_배치_issuedCount_일치() {
+        // CHUNK_SIZE(1,000)를 넘겨서 최소 3개 청크(1000+1000+200)로 나뉘어 처리되게 한다.
+        // 기존 "대용량" 테스트는 정확히 1,000건이라 청크 1개로 끝나서 청크 간 경계를 검증하지 못했다.
+        List<Long> multiChunkUserIds = LongStream.rangeClosed(300_001L, 302_200L)
+                .boxed()
+                .toList();
+        createMembers(multiChunkUserIds);
+
+        BatchIssueResponse response = adminBatchService.requestBatch(couponId, multiChunkUserIds);
+
+        await().atMost(30, TimeUnit.SECONDS).until(() ->
+                batchRepository.findById(response.batchId())
+                        .map(b -> b.getStatus() == BatchStatus.DONE)
+                        .orElse(false)
+        );
+
+        long issuedCount = couponIssueRepository.countByCouponId(couponId);
+        assertThat(issuedCount).isEqualTo(2_200);
+
+        int issuedQuantity = couponRepository.findById(couponId).orElseThrow().getIssuedQuantity();
+        assertThat(issuedQuantity).isEqualTo(2_200);
+
+        // 청크마다 하나의 트랜잭션으로 issuedCount를 누적했으므로, 배치 엔티티의 issuedCount도
+        // 실제 발급된 행 수와 정확히 일치해야 한다(청크 간 어중간한 상태가 없다는 증거).
+        CouponIssueBatch finished = batchRepository.findById(response.batchId()).orElseThrow();
+        assertThat(finished.getIssuedCount()).isEqualTo(2_200);
+    }
+
+    @Test
+    @DisplayName("복구 스케줄러가 먼저 배치를 FAILED로 확정하면, 뒤늦게 도착한 청크는 롤백되고 그 판정을 덮어쓰지 않는다")
+    void 복구스케줄러가_먼저_FAILED_확정하면_뒤늦은_청크는_롤백된다() {
+        // 큐를 거치지 않고 배치를 직접 PROCESSING까지 선점시킨 뒤, BatchRecoveryScheduler가
+        // 이미 고착으로 판단해 markFailedIfStale()로 FAILED 확정한 상황을 그대로 재현한다.
+        CouponIssueBatch batch = batchRepository.save(CouponIssueBatch.create(couponId, testUserIds.size()));
+        Long batchId = batch.getId();
+
+        // updateStatusIfMatch()/markFailedIfStale()는 @Modifying 쿼리라 활성 트랜잭션이 필요한데,
+        // 이 테스트 메서드 자체를 @Transactional로 만들면 BatchProcessor 내부의 각 청크
+        // TransactionTemplate이 이 트랜잭션에 합류해버려서 "커밋 여부"를 검증할 수 없게 된다.
+        // 그래서 이 준비 단계는 teardown()과 같은 방식으로 jdbcTemplate 직접 호출로 처리한다.
+        LocalDateTime processingStartedAt = LocalDateTime.now();
+        jdbcTemplate.update("UPDATE coupon_issue_batch SET status = 'PROCESSING', updated_at = ? WHERE id = ? AND status = 'PENDING'",
+                processingStartedAt, batchId);
+
+        LocalDateTime threshold = processingStartedAt.plusSeconds(1);
+        int failedUpdated = jdbcTemplate.update(
+                "UPDATE coupon_issue_batch SET status = 'FAILED', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'PROCESSING' AND updated_at < ?",
+                LocalDateTime.now(), LocalDateTime.now(), batchId, threshold);
+        assertThat(failedUpdated).isEqualTo(1);
+
+        CouponIssueBatch failedSnapshot = batchRepository.findById(batchId).orElseThrow();
+        assertThat(failedSnapshot.getStatus()).isEqualTo(BatchStatus.FAILED);
+        LocalDateTime failedCompletedAt = failedSnapshot.getCompletedAt();
+        assertThat(failedCompletedAt).isNotNull();
+
+        // "뒤늦게 도착한 청크"를 재현하기 위해 큐를 거치지 않고 BatchProcessor를 직접 호출한다.
+        batchProcessor.processBatch(new BatchMessagePayload(batchId, couponId, testUserIds));
+
+        // mock 반환값이 아니라 실제 DB 상태로 롤백 여부를 확인한다.
+        long issuedCount = couponIssueRepository.countByCouponId(couponId);
+        assertThat(issuedCount).isZero();
+        int issuedQuantity = couponRepository.findById(couponId).orElseThrow().getIssuedQuantity();
+        assertThat(issuedQuantity).isZero();
+
+        // 복구 스케줄러가 남긴 FAILED 판정과 completedAt을 BatchProcessor가 덮어쓰지 않았는지 확인
+        CouponIssueBatch afterProcessing = batchRepository.findById(batchId).orElseThrow();
+        assertThat(afterProcessing.getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(afterProcessing.getCompletedAt()).isEqualTo(failedCompletedAt);
     }
 }
