@@ -19,8 +19,16 @@ services:
   redis:
     image: redis:7-alpine
     container_name: coupon-redis
+    # AOF everysec: 1초 주기로 디스크에 flush. 장애 시 최근 1초 이내의 쓰기(Lua 당첨 판정 등)는
+    # 유실될 수 있다 — 이 경우 재고 키 자체는 남아있고 값만 오래된 상태라, 애플리케이션의
+    # "키 부재 시 발급 거절" 로직으로는 감지되지 않는다. 매 쓰기마다 동기화하는 appendfsync
+    # always는 이 창을 없애지만 모든 Redis 쓰기에 디스크 I/O 지연이 붙어 Lua Script 도입 취지
+    # (빠른 판정)와 상충되므로 선택하지 않았다. 최대 약 1초의 노출 구간은 알려진 한계로 남긴다.
+    command: redis-server --appendonly yes --appendfsync everysec
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -37,3 +45,4 @@ services:
 volumes:
   mysql_data:
   rabbitmq_data:
+  redis_data:
