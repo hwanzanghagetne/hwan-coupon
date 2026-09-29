@@ -8,6 +8,7 @@ import com.hwan.coupon.coupon.domain.IssueType;
 import com.hwan.coupon.coupon.dto.BatchIssueResponse;
 import com.hwan.coupon.coupon.infra.BatchMessagePayload;
 import com.hwan.coupon.coupon.infra.BatchProcessor;
+import com.hwan.coupon.coupon.infra.CouponIssueBulkInsertSupport;
 import com.hwan.coupon.coupon.repository.CouponIssueBatchRepository;
 import com.hwan.coupon.coupon.repository.CouponIssueRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
@@ -22,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -71,6 +73,8 @@ class AdminBatchIntegrationTest {
     @Autowired private CouponIssueBatchRepository batchRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private BatchProcessor batchProcessor;
+    @Autowired private TransactionTemplate transactionTemplate;
+    @Autowired private CouponIssueBulkInsertSupport bulkInsertSupport;
 
     private Long couponId;
     private final List<Long> testUserIds = List.of(10001L, 10002L, 10003L, 10004L, 10005L);
@@ -255,44 +259,70 @@ class AdminBatchIntegrationTest {
     }
 
     @Test
-    @DisplayName("복구 스케줄러가 먼저 배치를 FAILED로 확정하면, 뒤늦게 도착한 청크는 롤백되고 그 판정을 덮어쓰지 않는다")
-    void 복구스케줄러가_먼저_FAILED_확정하면_뒤늦은_청크는_롤백된다() {
-        // 큐를 거치지 않고 배치를 직접 PROCESSING까지 선점시킨 뒤, BatchRecoveryScheduler가
-        // 이미 고착으로 판단해 markFailedIfStale()로 FAILED 확정한 상황을 그대로 재현한다.
+    @DisplayName("이미 FAILED로 확정된 배치 메시지가 뒤늦게 도착하면 재처리하지 않고 그 판정을 그대로 유지한다")
+    void 이미_FAILED_확정된_배치는_재처리하지_않는다() {
+        // 복구 스케줄러가 이미 markFailedIfStale()로 FAILED 확정한 배치에 뒤늦게 메시지가
+        // 도착한 상황을 재현한다. BatchProcessor.processBatch()는 진입 시점에 상태를 보고
+        // DONE/FAILED면 즉시 반환하므로(BatchProcessor.java의 최상단 가드), 이 테스트는
+        // "청크 처리 중 롤백"이 아니라 그 가드 자체가 실제로 재처리와 덮어쓰기를 막아주는지를 검증한다.
         CouponIssueBatch batch = batchRepository.save(CouponIssueBatch.create(couponId, testUserIds.size()));
         Long batchId = batch.getId();
 
-        // updateStatusIfMatch()/markFailedIfStale()는 @Modifying 쿼리라 활성 트랜잭션이 필요한데,
-        // 이 테스트 메서드 자체를 @Transactional로 만들면 BatchProcessor 내부의 각 청크
-        // TransactionTemplate이 이 트랜잭션에 합류해버려서 "커밋 여부"를 검증할 수 없게 된다.
-        // 그래서 이 준비 단계는 teardown()과 같은 방식으로 jdbcTemplate 직접 호출로 처리한다.
-        LocalDateTime processingStartedAt = LocalDateTime.now();
-        jdbcTemplate.update("UPDATE coupon_issue_batch SET status = 'PROCESSING', updated_at = ? WHERE id = ? AND status = 'PENDING'",
-                processingStartedAt, batchId);
+        jdbcTemplate.update(
+                "UPDATE coupon_issue_batch SET status = 'FAILED', completed_at = ?, updated_at = ? WHERE id = ?",
+                LocalDateTime.now(), LocalDateTime.now(), batchId);
+        // MySQL DATETIME 컬럼은 초 단위로 저장되어 나노초가 잘린다. 방금 넣은 값을 그대로
+        // 비교 기준으로 삼으면(in-memory LocalDateTime.now()) DB에서 다시 읽은 값과 나노초
+        // 단위에서 어긋나므로, DB에 실제로 저장된 값을 다시 조회해서 기준으로 삼는다.
+        LocalDateTime failedAt = batchRepository.findById(batchId).orElseThrow().getCompletedAt();
 
-        LocalDateTime threshold = processingStartedAt.plusSeconds(1);
-        int failedUpdated = jdbcTemplate.update(
-                "UPDATE coupon_issue_batch SET status = 'FAILED', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'PROCESSING' AND updated_at < ?",
-                LocalDateTime.now(), LocalDateTime.now(), batchId, threshold);
-        assertThat(failedUpdated).isEqualTo(1);
-
-        CouponIssueBatch failedSnapshot = batchRepository.findById(batchId).orElseThrow();
-        assertThat(failedSnapshot.getStatus()).isEqualTo(BatchStatus.FAILED);
-        LocalDateTime failedCompletedAt = failedSnapshot.getCompletedAt();
-        assertThat(failedCompletedAt).isNotNull();
-
-        // "뒤늦게 도착한 청크"를 재현하기 위해 큐를 거치지 않고 BatchProcessor를 직접 호출한다.
         batchProcessor.processBatch(new BatchMessagePayload(batchId, couponId, testUserIds));
 
-        // mock 반환값이 아니라 실제 DB 상태로 롤백 여부를 확인한다.
-        long issuedCount = couponIssueRepository.countByCouponId(couponId);
-        assertThat(issuedCount).isZero();
-        int issuedQuantity = couponRepository.findById(couponId).orElseThrow().getIssuedQuantity();
-        assertThat(issuedQuantity).isZero();
+        assertThat(couponIssueRepository.countByCouponId(couponId)).isZero();
+        assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity()).isZero();
 
-        // 복구 스케줄러가 남긴 FAILED 판정과 completedAt을 BatchProcessor가 덮어쓰지 않았는지 확인
         CouponIssueBatch afterProcessing = batchRepository.findById(batchId).orElseThrow();
         assertThat(afterProcessing.getStatus()).isEqualTo(BatchStatus.FAILED);
-        assertThat(afterProcessing.getCompletedAt()).isEqualTo(failedCompletedAt);
+        assertThat(afterProcessing.getCompletedAt()).isEqualTo(failedAt);
+    }
+
+    @Test
+    @DisplayName("배치가 PROCESSING 상태가 아니면 incrementIssuedCountIfProcessing()은 갱신 없이 0을 반환한다")
+    void PROCESSING_아닌_배치는_issuedCount_조건부_갱신에서_제외된다() {
+        CouponIssueBatch batch = batchRepository.save(CouponIssueBatch.create(couponId, testUserIds.size()));
+        Long batchId = batch.getId();
+        jdbcTemplate.update("UPDATE coupon_issue_batch SET status = 'FAILED' WHERE id = ?", batchId);
+
+        int updated = transactionTemplate.execute(status ->
+                batchRepository.incrementIssuedCountIfProcessing(batchId, 5, LocalDateTime.now())
+        );
+
+        assertThat(updated).isZero();
+        assertThat(batchRepository.findById(batchId).orElseThrow().getIssuedCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("조건부 issuedCount 갱신이 0건이면 같은 트랜잭션의 INSERT와 재고 증가도 함께 롤백된다")
+    void 조건부_갱신_실패시_같은_트랜잭션의_INSERT와_재고증가도_롤백된다() {
+        // BatchProcessor의 청크 트랜잭션과 동일한 순서(INSERT → 재고 증가 → 조건부 issuedCount
+        // 갱신 → 0건이면 rollbackOnly)를 그대로 재현해서, 실제로 INSERT와 재고 증가가 커밋되지
+        // 않고 롤백되는지 mock이 아닌 실제 DB 상태로 확인한다.
+        CouponIssueBatch batch = batchRepository.save(CouponIssueBatch.create(couponId, testUserIds.size()));
+        Long batchId = batch.getId();
+        jdbcTemplate.update("UPDATE coupon_issue_batch SET status = 'FAILED' WHERE id = ?", batchId);
+
+        assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+            int inserted = bulkInsertSupport.insertIgnore(couponId, testUserIds);
+            couponRepository.incrementIssuedQuantityBy(couponId, inserted, LocalDateTime.now());
+
+            int countUpdated = batchRepository.incrementIssuedCountIfProcessing(batchId, inserted, LocalDateTime.now());
+            if (countUpdated == 0) {
+                status.setRollbackOnly();
+                throw new IllegalStateException("배치가 더 이상 PROCESSING 상태가 아님");
+            }
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(couponIssueRepository.countByCouponId(couponId)).isZero();
+        assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity()).isZero();
     }
 }

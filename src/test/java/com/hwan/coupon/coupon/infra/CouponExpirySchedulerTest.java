@@ -39,9 +39,11 @@ class CouponExpirySchedulerTest {
     private TransactionTemplate transactionTemplate;
 
     @Test
-    @DisplayName("만료 대상 쿠폰이 없으면 DB 업데이트와 캐시 evict를 수행하지 않는다")
+    @DisplayName("만료 대상이 전혀 없으면 DB 업데이트와 캐시 evict를 수행하지 않는다")
     void expireOverdueCoupons_만료대상없음_조기반환() {
         when(couponRepository.findExpiredActiveCouponIds(eq(CouponStatus.ACTIVE), any()))
+                .thenReturn(List.of());
+        when(couponRepository.findExpiredCouponIds(any(), any()))
                 .thenReturn(List.of());
 
         couponExpiryScheduler.expireOverdueCoupons();
@@ -53,25 +55,27 @@ class CouponExpirySchedulerTest {
     @Test
     @DisplayName("만료 대상 쿠폰이 있으면 쿠폰과 발급이력을 벌크 업데이트하고 캐시를 evict한다")
     void expireOverdueCoupons_만료대상있음_업데이트_캐시evict() {
-        List<Long> expiredIds = List.of(10L, 20L, 30L);
+        List<Long> activeExpiredIds = List.of(10L, 20L, 30L);
         when(couponRepository.findExpiredActiveCouponIds(eq(CouponStatus.ACTIVE), any()))
-                .thenReturn(expiredIds);
+                .thenReturn(activeExpiredIds);
+        when(couponRepository.findExpiredCouponIds(any(), any()))
+                .thenReturn(activeExpiredIds);
 
         // TransactionTemplate이 콜백을 실제로 실행하도록 설정
         when(transactionTemplate.execute(any())).thenAnswer(inv -> {
             TransactionCallback<?> callback = inv.getArgument(0);
             return callback.doInTransaction(null);
         });
-        when(couponRepository.markInactiveByIds(eq(expiredIds), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any()))
+        when(couponRepository.markInactiveByIds(eq(activeExpiredIds), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any()))
                 .thenReturn(3);
-        when(couponIssueRepository.expireIssuedByCouponIds(expiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED))
+        when(couponIssueRepository.expireIssuedByCouponIds(activeExpiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED))
                 .thenReturn(15);
 
         couponExpiryScheduler.expireOverdueCoupons();
 
         // DB 업데이트 검증
-        verify(couponRepository).markInactiveByIds(eq(expiredIds), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any());
-        verify(couponIssueRepository).expireIssuedByCouponIds(expiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED);
+        verify(couponRepository).markInactiveByIds(eq(activeExpiredIds), eq(CouponStatus.INACTIVE), eq(CouponStatus.ACTIVE), any());
+        verify(couponIssueRepository).expireIssuedByCouponIds(activeExpiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED);
 
         // 각 만료된 쿠폰 ID에 대해 캐시 evict 검증
         verify(couponCacheService).evict(10L);
@@ -80,10 +84,38 @@ class CouponExpirySchedulerTest {
     }
 
     @Test
+    @DisplayName("EXHAUSTED 등 상태 전환 대상이 아닌 쿠폰도 발급 이력은 expiredAt 기준으로 만료 처리된다")
+    void expireOverdueCoupons_상태전환대상아니어도_발급이력은_만료된다() {
+        // ACTIVE→INACTIVE 전환 대상은 없지만(이미 EXHAUSTED라 대상 아님), 발급 이력 만료
+        // 대상에는 그 EXHAUSTED 쿠폰(40L)이 포함된 상황을 재현한다.
+        when(couponRepository.findExpiredActiveCouponIds(eq(CouponStatus.ACTIVE), any()))
+                .thenReturn(List.of());
+        List<Long> allExpiredIds = List.of(40L);
+        when(couponRepository.findExpiredCouponIds(any(), any()))
+                .thenReturn(allExpiredIds);
+
+        when(transactionTemplate.execute(any())).thenAnswer(inv -> {
+            TransactionCallback<?> callback = inv.getArgument(0);
+            return callback.doInTransaction(null);
+        });
+        when(couponIssueRepository.expireIssuedByCouponIds(allExpiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED))
+                .thenReturn(2);
+
+        couponExpiryScheduler.expireOverdueCoupons();
+
+        verify(couponIssueRepository).expireIssuedByCouponIds(allExpiredIds, CouponIssueStatus.EXPIRED, CouponIssueStatus.ISSUED);
+        // 상태 전환 대상이 아니므로 markInactiveByIds/캐시 evict는 호출되지 않는다
+        verify(couponRepository, never()).markInactiveByIds(any(), any(), any(), any());
+        verify(couponCacheService, never()).evict(any());
+    }
+
+    @Test
     @DisplayName("DB 업데이트는 하나의 트랜잭션으로 묶여 원자적으로 실행된다")
     void expireOverdueCoupons_트랜잭션_단일처리() {
         List<Long> expiredIds = List.of(10L);
         when(couponRepository.findExpiredActiveCouponIds(eq(CouponStatus.ACTIVE), any()))
+                .thenReturn(expiredIds);
+        when(couponRepository.findExpiredCouponIds(any(), any()))
                 .thenReturn(expiredIds);
         when(transactionTemplate.execute(any())).thenAnswer(inv -> {
             TransactionCallback<?> callback = inv.getArgument(0);

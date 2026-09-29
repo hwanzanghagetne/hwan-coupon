@@ -49,16 +49,4 @@ public class CouponIssueBatch {
         batch.updatedAt = batch.requestedAt;
         return batch;
     }
-
-    public void markDone() {
-        this.status = BatchStatus.DONE;
-        this.completedAt = LocalDateTime.now();
-        this.updatedAt = this.completedAt;
-    }
-
-    public void markFailed() {
-        this.status = BatchStatus.FAILED;
-        this.completedAt = LocalDateTime.now();
-        this.updatedAt = this.completedAt;
-    }
 }

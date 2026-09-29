@@ -1,6 +1,7 @@
 package com.hwan.coupon.coupon.repository;
 
 import com.hwan.coupon.coupon.domain.Coupon;
+import com.hwan.coupon.coupon.domain.CouponIssueStatus;
 import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.IssueType;
 
@@ -13,26 +14,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface CouponRepository extends JpaRepository<Coupon, Long> {
-
-    @Modifying(clearAutomatically = true)
-    @Query("""
-            UPDATE Coupon c
-               SET c.issuedQuantity = c.issuedQuantity + 1,
-                   c.status = CASE
-                       WHEN c.totalQuantity IS NOT NULL AND c.issuedQuantity + 1 >= c.totalQuantity
-                           THEN :exhaustedStatus
-                       ELSE c.status
-                   END,
-                   c.updatedAt = :now
-             WHERE c.id = :couponId
-            """)
-    void incrementIssuedQuantity(@Param("couponId") Long couponId,
-                                 @Param("exhaustedStatus") CouponStatus exhaustedStatus,
-                                 @Param("now") LocalDateTime now);
-
-    @Modifying(clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :status, c.updatedAt = :now WHERE c.id = :couponId AND c.status = 'ACTIVE'")
-    int markExhausted(@Param("couponId") Long couponId, @Param("status") CouponStatus status, @Param("now") LocalDateTime now);
 
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Coupon c SET c.issuedQuantity = c.issuedQuantity + :count, c.updatedAt = :now WHERE c.id = :couponId")
@@ -59,6 +40,17 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
 
     @Query("SELECT c.id FROM Coupon c WHERE c.status = :status AND c.expiredAt < :now")
     List<Long> findExpiredActiveCouponIds(@Param("status") CouponStatus status, @Param("now") LocalDateTime now);
+
+    // 쿠폰 상태(EXHAUSTED, INACTIVE 등)와 무관하게 expiredAt만으로 판단한다.
+    @Query("""
+            SELECT DISTINCT c.id FROM Coupon c
+             WHERE c.expiredAt < :now
+               AND EXISTS (
+                   SELECT 1 FROM CouponIssue ci
+                    WHERE ci.couponId = c.id AND ci.status = :issuedStatus
+               )
+            """)
+    List<Long> findExpiredCouponIds(@Param("now") LocalDateTime now, @Param("issuedStatus") CouponIssueStatus issuedStatus);
 
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Coupon c SET c.status = :status, c.updatedAt = :now WHERE c.id IN :ids AND c.status = :currentStatus")
