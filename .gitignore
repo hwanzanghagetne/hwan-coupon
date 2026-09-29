@@ -56,10 +56,6 @@ memory/
 ### JVM Heap Dumps ###
 *.hprof
 
-### Frontend ###
-frontend/node_modules/
-frontend/dist/
-
 ### Local scratch / logs ###
 /temp/
 .gradle-user-home/
