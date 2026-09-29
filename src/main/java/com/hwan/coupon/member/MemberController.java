@@ -6,6 +6,7 @@ import com.hwan.coupon.member.dto.LoginResponse;
 import com.hwan.coupon.member.dto.SignupRequest;
 import com.hwan.coupon.member.dto.SignupResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +16,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,6 +26,7 @@ public class MemberController {
 
     private final MemberService memberService;
     private final AuthenticationManager authenticationManager;
+    private final SecurityContextRepository securityContextRepository;
 
     @PostMapping("/signup")
     public ResponseEntity<SignupResponse> signup(@RequestBody @Valid SignupRequest request) {
@@ -32,33 +34,34 @@ public class MemberController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@RequestBody @Valid LoginRequest request, HttpServletRequest httpRequest) {
+    public ResponseEntity<LoginResponse> login(@RequestBody @Valid LoginRequest request,
+                                                HttpServletRequest httpRequest,
+                                                HttpServletResponse httpResponse) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.email(), request.password())
         );
 
-        // 세션 고정 공격 방지: 로그인 전 세션을 무효화하고 새 세션 발급
+        // 세션 고정 공격 방지: 기존 세션 무효화 후 새 세션 발급
         HttpSession oldSession = httpRequest.getSession(false);
         if (oldSession != null) {
             oldSession.invalidate();
         }
+        httpRequest.getSession(true);
 
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
         securityContext.setAuthentication(authentication);
         SecurityContextHolder.setContext(securityContext);
-
-        HttpSession newSession = httpRequest.getSession(true);
-        newSession.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
+        securityContextRepository.saveContext(securityContext, httpRequest, httpResponse);
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        Member member = userDetails.getMember();
 
-        return ResponseEntity.ok(new LoginResponse(member.getId(), member.getEmail(), member.getName(), member.getRole()));
+        return ResponseEntity.ok(new LoginResponse(userDetails.getMemberId(), userDetails.getEmail(), userDetails.getName(), userDetails.getRole()));
     }
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpSession session) {
         session.invalidate();
+        SecurityContextHolder.clearContext();
         return ResponseEntity.noContent().build();
     }
 }

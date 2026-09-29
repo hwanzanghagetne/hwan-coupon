@@ -62,7 +62,7 @@ public class CouponController {
     public ResponseEntity<CouponIssueAcceptedResponse> issueCoupon(
             @PathVariable Long couponId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.accepted().body(couponService.issueCoupon(couponId, userDetails.getMember().getId()));
+        return ResponseEntity.accepted().body(couponService.issueCoupon(couponId, userDetails.getMemberId()));
     }
 
     @GetMapping("/my")
@@ -70,7 +70,7 @@ public class CouponController {
     public ResponseEntity<Page<MyCouponResponse>> getMyCoupons(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PageableDefault(size = 20, sort = "issuedAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(couponService.getMyCoupons(userDetails.getMember().getId(), pageable));
+        return ResponseEntity.ok(couponService.getMyCoupons(userDetails.getMemberId(), pageable));
     }
 
     @PostMapping("/{couponId}/use")
@@ -79,7 +79,7 @@ public class CouponController {
             @PathVariable Long couponId,
             @RequestBody @Valid UseCouponRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(couponService.useCoupon(couponId, userDetails.getMember().getId(), request.orderAmount()));
+        return ResponseEntity.ok(couponService.useCoupon(couponId, userDetails.getMemberId(), request.orderAmount()));
     }
 
     @PostMapping("/{couponId}/restore")
@@ -87,7 +87,7 @@ public class CouponController {
     public ResponseEntity<CouponIssueResponse> restoreCoupon(
             @PathVariable Long couponId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(couponService.restoreCoupon(couponId, userDetails.getMember().getId()));
+        return ResponseEntity.ok(couponService.restoreCoupon(couponId, userDetails.getMemberId()));
     }
 
     @GetMapping("/stats/monthly")

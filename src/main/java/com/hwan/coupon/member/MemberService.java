@@ -19,11 +19,6 @@ public class MemberService {
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
-
-        if (memberRepository.existsByEmail(request.email())) {
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
-        }
-
         String encodedPassword = passwordEncoder.encode(request.password());
 
         Member member = Member.create(
@@ -39,8 +34,12 @@ public class MemberService {
             Member saved = memberRepository.save(member);
             return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName());
         } catch (DataIntegrityViolationException e) {
-            // existsByEmail 체크 이후 동시 가입 요청으로 UNIQUE 제약 위반 발생 시
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+            // email UNIQUE 위반만 좁혀서 변환하고, 그 외는 그대로 전파
+            String message = String.valueOf(e.getMostSpecificCause().getMessage());
+            if (message.contains("uq_member_email")) {
+                throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+            }
+            throw e;
         }
     }
 }

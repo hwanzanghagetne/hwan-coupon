@@ -10,13 +10,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,7 +44,6 @@ class MemberServiceTest {
                 Role.USER
         );
 
-        when(memberRepository.existsByEmail("test@email.com")).thenReturn(false);
         when(passwordEncoder.encode("password1!")).thenReturn("encoded");
         when(memberRepository.save(any(Member.class))).thenReturn(saved);
 
@@ -57,22 +56,42 @@ class MemberServiceTest {
     }
 
     @Test
-    @DisplayName("이미 존재하는 이메일로 회원가입 시 EMAIL_ALREADY_EXISTS 예외가 발생한다")
-    void signup_이메일중복() {
+    @DisplayName("email UNIQUE 제약을 위반하면 EMAIL_ALREADY_EXISTS로 변환된다")
+    void signup_이메일중복시_EMAIL_ALREADY_EXISTS_예외가_발생한다() {
         SignupRequest request = new SignupRequest(
                 "duplicate@email.com", "password1!", "홍길동",
                 LocalDate.of(1990, 1, 1), "010-1234-5678"
         );
+        DataIntegrityViolationException violation = new DataIntegrityViolationException(
+                "could not execute statement",
+                new RuntimeException("Duplicate entry 'duplicate@email.com' for key 'member.uq_member_email'")
+        );
 
-        when(memberRepository.existsByEmail("duplicate@email.com")).thenReturn(true);
+        when(passwordEncoder.encode("password1!")).thenReturn("encoded");
+        when(memberRepository.save(any(Member.class))).thenThrow(violation);
 
         assertThatThrownBy(() -> memberService.signup(request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
 
-        // 중복 확인 후 저장을 시도하면 안 됨
-        verify(memberRepository, never()).save(any());
-        verify(passwordEncoder, never()).encode(anyString());
+    @Test
+    @DisplayName("email UNIQUE 위반이 아닌 무결성 제약 위반은 이메일 중복으로 위장하지 않고 그대로 전파된다")
+    void signup_이메일외_무결성위반은_그대로_전파() {
+        SignupRequest request = new SignupRequest(
+                "normal@email.com", "password1!", "홍길동",
+                LocalDate.of(1990, 1, 1), "010-1234-5678"
+        );
+        DataIntegrityViolationException violation = new DataIntegrityViolationException(
+                "could not execute statement",
+                new RuntimeException("Data too long for column 'name' at row 1")
+        );
+
+        when(passwordEncoder.encode("password1!")).thenReturn("encoded");
+        when(memberRepository.save(any(Member.class))).thenThrow(violation);
+
+        assertThatThrownBy(() -> memberService.signup(request))
+                .isSameAs(violation);
     }
 }
