@@ -103,8 +103,8 @@ public class RabbitMQConfig {
     }
 
     // 선착순 발급 배치 컨슈머 전용 팩토리 — 짧은 주기로 모은 메시지를 하나의 DB 트랜잭션으로
-    // 반영한 뒤에만 ack한다(AcknowledgeMode.MANUAL). 동시 소비자를 1개로 고정해 DB 쓰기
-    // 주체를 하나로 유지한다.
+    // 반영한 뒤에만 ack한다(AcknowledgeMode.MANUAL). 동시 소비자 1개는 JVM(인스턴스) 단위
+    // 제한이라, 애플리케이션을 여러 대로 늘리면 소비자도 늘어난다 — 단일 인스턴스 배포 전제.
     @Bean
     public SimpleRabbitListenerContainerFactory firstComeBatchContainerFactory(ConnectionFactory connectionFactory) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();

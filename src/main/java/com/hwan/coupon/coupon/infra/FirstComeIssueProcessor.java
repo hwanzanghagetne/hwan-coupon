@@ -50,8 +50,8 @@ public class FirstComeIssueProcessor {
 
             channel.basicAck(lastDeliveryTag, true);
         } catch (Exception e) {
-            log.error("선착순 배치 반영 실패, 메시지 재전달 요청 messageCount={} error={}", messages.size(), e.getMessage(), e);
-            channel.basicNack(lastDeliveryTag, true, true);
+            log.error("선착순 배치 반영 실패, DLQ로 이동 messageCount={} error={}", messages.size(), e.getMessage(), e);
+            channel.basicNack(lastDeliveryTag, true, false);
         }
     }
 }

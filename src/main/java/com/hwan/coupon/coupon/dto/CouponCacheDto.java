@@ -8,23 +8,19 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 public record CouponCacheDto(
-        Long id,
         CouponStatus status,
         IssueType issueType,
         LocalDateTime expiredAt,
         LocalTime issueStartTime,
-        LocalTime issueEndTime,
-        Integer minOrderAmount
+        LocalTime issueEndTime
 ) {
     public static CouponCacheDto from(Coupon coupon) {
         return new CouponCacheDto(
-                coupon.getId(),
                 coupon.getStatus(),
                 coupon.getIssueType(),
                 coupon.getExpiredAt(),
                 coupon.getIssueStartTime(),
-                coupon.getIssueEndTime(),
-                coupon.getMinOrderAmount()
+                coupon.getIssueEndTime()
         );
     }
 }

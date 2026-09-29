@@ -30,6 +30,9 @@ public class CacheConfig {
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
+                // @CacheEvict를 트랜잭션 커밋 이후로 미룬다 — 커밋 전에 지우면 그 사이
+                // 다른 요청이 옛 값을 다시 캐시에 채워 넣을 수 있다.
+                .transactionAware()
                 .build();
     }
 }

@@ -51,8 +51,8 @@ public class CouponIssueWriter {
             int inserted = bulkInsertSupport.insertIgnore(couponId, userIds);
             if (inserted > 0) {
                 couponRepository.incrementIssuedQuantityByAndMarkExhausted(couponId, inserted, CouponStatus.EXHAUSTED, now);
-                couponCacheService.evict(couponId);
             }
+            couponCacheService.evict(couponId);
             totalInserted += inserted;
         }
 

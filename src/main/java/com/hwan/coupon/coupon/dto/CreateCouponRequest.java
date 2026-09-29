@@ -5,12 +5,14 @@ import com.hwan.coupon.coupon.domain.IssueType;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 public record CreateCouponRequest(
 
         @NotBlank
+        @Size(max = 255)
         String name,
 
         @NotNull

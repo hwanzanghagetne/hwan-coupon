@@ -28,7 +28,6 @@ public enum ErrorCode {
     COUPON_EXPIRED(400, "만료된 쿠폰입니다"),
     COUPON_NOT_APPLICABLE(400, "최소 주문 금액 조건을 충족하지 않습니다"),
     COUPON_RESTORE_NOT_ALLOWED(400, "복원할 수 없는 쿠폰 상태입니다"),
-    COUPON_ALREADY_INACTIVE(400, "이미 비활성 상태인 쿠폰입니다"),
     COUPON_STOCK_TEMPORARILY_UNAVAILABLE(503, "일시적으로 재고 확인이 불가능합니다. 잠시 후 다시 시도해주세요"),
 
     // Batch
