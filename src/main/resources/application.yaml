@@ -2,10 +2,10 @@ spring:
   application:
     name: coupon
   session:
-    store-type: redis
     timeout: 30m
-    redis:
-      namespace: coupon:session
+    data:
+      redis:
+        namespace: coupon:session
   jpa:
     open-in-view: false
     hibernate:
