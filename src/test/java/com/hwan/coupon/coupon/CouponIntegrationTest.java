@@ -112,6 +112,22 @@ class CouponIntegrationTest {
     }
 
     @Test
+    void 관리자발급_쿠폰에_totalQuantity를_넣으면_400을_받는다() {
+        String base = "http://localhost:" + port;
+        Map<String, Object> body = Map.of(
+                "name", "수량지정관리자쿠폰", "discountType", "FIXED", "discountValue", 1000,
+                "totalQuantity", 10, "issueType", "ADMIN_ISSUED", "expiredAt", "2099-01-01T00:00:00"
+        );
+
+        try {
+            restTemplate.exchange(base + "/api/coupons", HttpMethod.POST, new HttpEntity<>(body, adminHeaders()), String.class);
+            fail("관리자 발급 쿠폰에 수량을 넣었는데 예외가 발생하지 않았습니다");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().value()).isEqualTo(400);
+        }
+    }
+
+    @Test
     void 이름이_255자를_넘으면_400을_받는다() {
         String base = "http://localhost:" + port;
         Map<String, Object> body = Map.of(

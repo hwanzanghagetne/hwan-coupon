@@ -55,6 +55,16 @@ class CouponTest {
                 .isEqualTo(ErrorCode.COUPON_FIRST_COME_REQUIRES_QUANTITY);
     }
 
+    @Test
+    @DisplayName("ADMIN_ISSUED에 totalQuantity를 넣으면 COUPON_ADMIN_ISSUED_QUANTITY_NOT_ALLOWED 예외가 발생한다")
+    void create_관리자발급_수량지정_예외() {
+        assertThatThrownBy(() -> Coupon.create("테스트", DiscountType.FIXED, 1000, 10, null,
+                IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_ADMIN_ISSUED_QUANTITY_NOT_ALLOWED);
+    }
+
     // ---- minOrderAmount 검증 ----
 
     @Test

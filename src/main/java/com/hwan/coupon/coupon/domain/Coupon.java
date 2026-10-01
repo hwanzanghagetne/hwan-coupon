@@ -132,5 +132,8 @@ public class Coupon {
         if (issueType == IssueType.FIRST_COME && totalQuantity == null) {
             throw new BusinessException(ErrorCode.COUPON_FIRST_COME_REQUIRES_QUANTITY);
         }
+        if (issueType == IssueType.ADMIN_ISSUED && totalQuantity != null) {
+            throw new BusinessException(ErrorCode.COUPON_ADMIN_ISSUED_QUANTITY_NOT_ALLOWED);
+        }
     }
 }

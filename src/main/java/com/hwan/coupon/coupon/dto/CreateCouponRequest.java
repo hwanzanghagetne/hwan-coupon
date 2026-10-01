@@ -21,7 +21,7 @@ public record CreateCouponRequest(
         @NotNull
         Integer discountValue,
 
-        Integer totalQuantity,      // null이면 무제한
+        Integer totalQuantity,      // FIRST_COME은 필수, ADMIN_ISSUED는 null
 
         Integer minOrderAmount,     // null이면 조건 없음
 
