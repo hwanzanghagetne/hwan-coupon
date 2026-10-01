@@ -27,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -166,5 +167,40 @@ class CouponIssueConcurrencyTest {
 
         assertThat(coupon.getIssuedQuantity()).isEqualTo(totalQuantity);
         assertThat(issueCount).isEqualTo(totalQuantity);
+    }
+
+    @Test
+    @DisplayName("같은 사용자가 동시에 여러 번 요청해도 한 장만 발급된다")
+    void 같은사용자_동시중복요청_한장만발급() throws InterruptedException {
+        int requestCount = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(16);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(requestCount);
+        AtomicInteger accepted = new AtomicInteger();
+
+        for (int i = 0; i < requestCount; i++) {
+            executor.submit(() -> {
+                try {
+                    start.await();
+                    couponService.issueCoupon(couponId, 1L);
+                    accepted.incrementAndGet();
+                } catch (Exception ignored) {
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        start.countDown();
+        assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        executor.shutdownNow();
+
+        await().atMost(10, TimeUnit.SECONDS).until(() ->
+                couponIssueRepository.countByCouponId(couponId) == 1
+        );
+
+        assertThat(accepted).hasValue(1);
+        assertThat(couponIssueRepository.countByCouponId(couponId)).isEqualTo(1);
+        assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity()).isEqualTo(1);
     }
 }

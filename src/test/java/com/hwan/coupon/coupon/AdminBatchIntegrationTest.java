@@ -32,6 +32,10 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 
@@ -160,6 +164,54 @@ class AdminBatchIntegrationTest {
 
         CouponIssueBatch batch = batchRepository.findById(response.batchId()).orElseThrow();
         assertThat(batch.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("서로 다른 두 배치가 동시에 요청되어도 각각 정확히 완료된다")
+    void 동시_배치요청_각각_DONE_및_발급수일치() throws Exception {
+        List<Long> firstTargets = testUserIds.subList(0, 2);
+        List<Long> secondTargets = testUserIds.subList(2, 5);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try {
+            Future<BatchIssueResponse> first = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return adminBatchService.requestBatch(couponId, firstTargets);
+            });
+            Future<BatchIssueResponse> second = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return adminBatchService.requestBatch(couponId, secondTargets);
+            });
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            BatchIssueResponse firstResponse = first.get(5, TimeUnit.SECONDS);
+            BatchIssueResponse secondResponse = second.get(5, TimeUnit.SECONDS);
+
+            await().atMost(10, TimeUnit.SECONDS).until(() ->
+                    batchRepository.findById(firstResponse.batchId())
+                            .map(batch -> batch.getStatus() == BatchStatus.DONE)
+                            .orElse(false)
+                            && batchRepository.findById(secondResponse.batchId())
+                            .map(batch -> batch.getStatus() == BatchStatus.DONE)
+                            .orElse(false)
+            );
+
+            CouponIssueBatch firstBatch = batchRepository.findById(firstResponse.batchId()).orElseThrow();
+            CouponIssueBatch secondBatch = batchRepository.findById(secondResponse.batchId()).orElseThrow();
+            assertThat(firstBatch.getIssuedCount()).isEqualTo(firstTargets.size());
+            assertThat(secondBatch.getIssuedCount()).isEqualTo(secondTargets.size());
+            assertThat(couponIssueRepository.countByCouponId(couponId)).isEqualTo(testUserIds.size());
+            assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity())
+                    .isEqualTo(testUserIds.size());
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
