@@ -206,6 +206,28 @@ class AdminBatchIntegrationTest {
     }
 
     @Test
+    @DisplayName("존재하지 않는 회원 ID는 조용히 스킵되고 targetCount와 issuedCount의 차이로만 드러난다")
+    void 존재하지_않는_회원은_스킵되고_카운트_차이로만_드러난다() {
+        // member 테이블에 없는 ID를 섞는다 — INSERT IGNORE가 FK 위반을 중복과
+        // 동일하게 조용히 스킵하므로, 사유 구분 없이 targetCount - issuedCount로만 드러난다.
+        List<Long> withInvalidMember = new java.util.ArrayList<>(testUserIds);
+        withInvalidMember.add(999_999L);
+
+        BatchIssueResponse response = adminBatchService.requestBatch(couponId, withInvalidMember);
+
+        await().atMost(5, TimeUnit.SECONDS).until(() ->
+                batchRepository.findById(response.batchId())
+                        .map(b -> b.getStatus() == BatchStatus.DONE || b.getStatus() == BatchStatus.FAILED)
+                        .orElse(false)
+        );
+
+        CouponIssueBatch finished = batchRepository.findById(response.batchId()).orElseThrow();
+        assertThat(finished.getStatus()).isEqualTo(BatchStatus.DONE);
+        assertThat(finished.getTargetCount()).isEqualTo(testUserIds.size() + 1);
+        assertThat(finished.getIssuedCount()).isEqualTo(testUserIds.size());
+    }
+
+    @Test
     @DisplayName("대용량 발급 처리 시 모든 건이 정확히 발급된다")
     void 대용량_발급_정확성_검증() {
         List<Long> largeUserIds = LongStream.rangeClosed(200_001L, 201_000L)

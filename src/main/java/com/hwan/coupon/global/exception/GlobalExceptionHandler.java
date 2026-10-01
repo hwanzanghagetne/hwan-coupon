@@ -2,6 +2,7 @@ package com.hwan.coupon.global.exception;
 
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -60,6 +61,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(400)
                 .body(new ErrorResponse(400, message));
+    }
+
+    // 존재하지 않는 필드로 정렬 요청 시 발생(예: ?sort=unknownField) — 이 핸들러가 없으면
+    // catch-all(Exception.class)에 걸려 400 대신 500으로 응답하게 된다.
+    @ExceptionHandler(PropertyReferenceException.class)
+    public ResponseEntity<ErrorResponse> handlePropertyReferenceException(PropertyReferenceException e) {
+        return ResponseEntity
+                .status(400)
+                .body(new ErrorResponse(400, "정렬할 수 없는 필드입니다: " + e.getPropertyName()));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

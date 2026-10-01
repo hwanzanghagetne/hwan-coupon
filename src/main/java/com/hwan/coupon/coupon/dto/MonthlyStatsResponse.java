@@ -5,7 +5,4 @@ public record MonthlyStatsResponse(
         long totalIssued,
         long totalUsed
 ) {
-    public static MonthlyStatsResponse empty(String month) {
-        return new MonthlyStatsResponse(month, 0L, 0L);
-    }
 }

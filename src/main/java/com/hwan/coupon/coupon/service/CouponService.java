@@ -9,7 +9,7 @@ import com.hwan.coupon.coupon.dto.CouponIssueAcceptedResponse;
 import com.hwan.coupon.coupon.dto.CouponIssueResponse;
 import com.hwan.coupon.coupon.dto.CouponResponse;
 import com.hwan.coupon.coupon.dto.CreateCouponRequest;
-import com.hwan.coupon.coupon.dto.MonthlyStatsProjection;
+import com.hwan.coupon.coupon.dto.MonthlyCountProjection;
 import com.hwan.coupon.coupon.dto.MonthlyStatsResponse;
 import com.hwan.coupon.coupon.dto.MyCouponResponse;
 import com.hwan.coupon.coupon.infra.FirstComeIssuePayload;
@@ -194,16 +194,18 @@ public class CouponService {
         LocalDateTime start = LocalDateTime.of(year, 1, 1, 0, 0, 0);
         LocalDateTime end = LocalDateTime.of(year + 1, 1, 1, 0, 0, 0);
 
-        Map<String, MonthlyStatsResponse> statsMap = couponIssueRepository.findMonthlyStatsByYear(start, end)
-                .stream()
-                .collect(Collectors.toMap(
-                        MonthlyStatsProjection::getMonth,
-                        p -> new MonthlyStatsResponse(p.getMonth(), p.getTotalIssued(), p.getTotalUsed())
-                ));
+        Map<String, Long> issuedByMonth = couponIssueRepository.countIssuedByMonth(start, end).stream()
+                .collect(Collectors.toMap(MonthlyCountProjection::getMonth, MonthlyCountProjection::getCount));
+        Map<String, Long> usedByMonth = couponIssueRepository.countUsedByMonth(start, end).stream()
+                .collect(Collectors.toMap(MonthlyCountProjection::getMonth, MonthlyCountProjection::getCount));
 
         return IntStream.rangeClosed(1, 12)
                 .mapToObj(month -> String.format("%d-%02d", year, month))
-                .map(key -> statsMap.getOrDefault(key, MonthlyStatsResponse.empty(key)))
+                .map(key -> new MonthlyStatsResponse(
+                        key,
+                        issuedByMonth.getOrDefault(key, 0L),
+                        usedByMonth.getOrDefault(key, 0L)
+                ))
                 .collect(Collectors.toList());
     }
 

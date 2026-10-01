@@ -2,8 +2,11 @@ package com.hwan.coupon.coupon.service;
 
 import com.hwan.coupon.coupon.domain.Coupon;
 import com.hwan.coupon.coupon.domain.CouponIssueBatch;
+import com.hwan.coupon.coupon.domain.CouponStatus;
 import com.hwan.coupon.coupon.domain.DiscountType;
 import com.hwan.coupon.coupon.domain.IssueType;
+import com.hwan.coupon.coupon.dto.BatchIssueResponse;
+import com.hwan.coupon.coupon.domain.BatchStatus;
 import com.hwan.coupon.coupon.infra.BatchMessagePayload;
 import com.hwan.coupon.coupon.repository.CouponIssueBatchRepository;
 import com.hwan.coupon.coupon.repository.CouponRepository;
@@ -16,7 +19,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -76,6 +81,52 @@ class AdminBatchServiceTest {
 
         verify(batchRepository, never()).save(any());
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
+    }
+
+    @Test
+    @DisplayName("비활성화된 쿠폰으로 배치 요청 시 COUPON_NOT_ACTIVE 예외가 발생한다")
+    void requestBatch_비활성쿠폰() {
+        Coupon coupon = adminIssuedCoupon();
+        ReflectionTestUtils.setField(coupon, "status", CouponStatus.INACTIVE);
+        when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
+
+        assertThatThrownBy(() -> adminBatchService.requestBatch(1L, List.of(1L, 2L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_NOT_ACTIVE);
+
+        verify(batchRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("만료된 쿠폰으로 배치 요청 시 COUPON_EXPIRED 예외가 발생한다")
+    void requestBatch_만료쿠폰() {
+        Coupon coupon = adminIssuedCoupon();
+        ReflectionTestUtils.setField(coupon, "expiredAt", LocalDateTime.now().minusDays(1));
+        when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
+
+        assertThatThrownBy(() -> adminBatchService.requestBatch(1L, List.of(1L, 2L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COUPON_EXPIRED);
+
+        verify(batchRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("발행 중 연결 오류가 나면 예외를 던지지 않고 PENDING 상태와 batchId를 그대로 반환한다")
+    void requestBatch_발행연결오류_PENDING_반환() {
+        when(couponRepository.findById(1L)).thenReturn(Optional.of(adminIssuedCoupon()));
+        CouponIssueBatch savedBatch = CouponIssueBatch.create(1L, 2);
+        ReflectionTestUtils.setField(savedBatch, "id", 123L);
+        when(batchRepository.save(any())).thenReturn(savedBatch);
+        doThrow(new AmqpException("connection refused"))
+                .when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(Object.class));
+
+        BatchIssueResponse response = adminBatchService.requestBatch(1L, List.of(10L, 20L));
+
+        assertThat(response.batchId()).isEqualTo(123L);
+        assertThat(response.status()).isEqualTo(BatchStatus.PENDING);
     }
 
     @Test

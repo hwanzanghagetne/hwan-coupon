@@ -17,6 +17,9 @@ import java.util.List;
  * .sum()으로 집계하면 issuedQuantity가 잘못 계산된다. 대신 멀티 VALUES INSERT 문을 직접 조립하고
  * update()를 사용하면 MySQL이 실제 영향받은 행 수만 반환하므로 INSERT IGNORE 중복 스킵도
  * 정확히 집계된다.
+ *
+ * INSERT IGNORE는 중복 회원뿐 아니라 존재하지 않는 회원 ID(FK 위반) 등도 같은 방식으로 조용히
+ * 스킵한다 — 스킵 사유는 구분하지 않으며, targetCount와 issuedCount의 차이로만 드러난다.
  */
 @Component
 @RequiredArgsConstructor

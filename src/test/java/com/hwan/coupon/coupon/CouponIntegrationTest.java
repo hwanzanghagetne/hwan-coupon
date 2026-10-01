@@ -21,6 +21,8 @@ import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -69,6 +71,7 @@ class CouponIntegrationTest {
     // 기본 RestTemplate은 HttpURLConnection 기반이라 PATCH를 못 보내므로 JDK HttpClient 팩토리를 쓴다
     private final RestTemplate restTemplate = new RestTemplate(new JdkClientHttpRequestFactory());
     private String adminCookie;
+    private Long adminId;
 
     @BeforeEach
     void setUp() {
@@ -82,6 +85,7 @@ class CouponIntegrationTest {
         jsonHeaders.setContentType(MediaType.APPLICATION_JSON);
         restTemplate.postForEntity(base + "/api/members/signup", new HttpEntity<>(signupBody, jsonHeaders), String.class);
         jdbcTemplate.update("UPDATE member SET role='ADMIN' WHERE email=?", email);
+        adminId = jdbcTemplate.queryForObject("SELECT id FROM member WHERE email=?", Long.class, email);
 
         Map<String, String> loginBody = Map.of("email", email, "password", "password123");
         ResponseEntity<String> loginResponse = restTemplate.postForEntity(
@@ -177,6 +181,144 @@ class CouponIntegrationTest {
         } catch (HttpStatusCodeException e) {
             assertThat(e.getStatusCode().value()).isEqualTo(404);
         }
+    }
+
+    @Test
+    void 잘못된_sort_필드는_500이_아니라_400을_받는다() {
+        String base = "http://localhost:" + port;
+        try {
+            restTemplate.exchange(base + "/api/coupons?sort=unknownField", HttpMethod.GET,
+                    new HttpEntity<>(adminHeaders()), String.class);
+            fail("잘못된 sort인데 예외가 발생하지 않았습니다");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().value()).isEqualTo(400);
+        }
+    }
+
+    private void createMember(Long id) {
+        jdbcTemplate.update(
+                "INSERT INTO member (id, email, password, name, birthdate, phone, role, created_at, updated_at) " +
+                        "VALUES (?,?,?,?,?,?,?,NOW(),NOW())",
+                id, "stats-member-" + id + "@test.com", "password", "통계테스트유저" + id,
+                LocalDate.of(1990, 1, 1), "010-0000-0000", "USER"
+        );
+    }
+
+    // 이 테스트 클래스는 테스트 간 DB를 정리하지 않으므로, 월별 통계처럼 전체 coupon_issue를
+    // 집계하는 API는 절대값이 아니라 "작업 전후 차이"로 검증해야 다른 테스트의 데이터에
+    // 영향받지 않는다.
+    private Map<String, Long> monthlyStatsSnapshot(int year) {
+        ResponseEntity<List> response = restTemplate.exchange(
+                "http://localhost:" + port + "/api/coupons/stats/monthly?year=" + year, HttpMethod.GET,
+                new HttpEntity<>(adminHeaders()), List.class);
+        List<Map<String, Object>> stats = response.getBody();
+        assertThat(stats).hasSize(12);
+        Map<String, Long> snapshot = new java.util.HashMap<>();
+        for (Map<String, Object> m : stats) {
+            snapshot.put(m.get("month") + ":issued", ((Number) m.get("totalIssued")).longValue());
+            snapshot.put(m.get("month") + ":used", ((Number) m.get("totalUsed")).longValue());
+        }
+        return snapshot;
+    }
+
+    @Test
+    void 월별_통계는_발급월과_사용월을_각각_집계하고_연도_경계를_지킨다() {
+        Map<String, Long> before = monthlyStatsSnapshot(2026);
+
+        Long couponId = createCoupon("월별통계쿠폰");
+        createMember(900_001L);
+        createMember(900_002L);
+        createMember(900_003L);
+
+        // 1월 10일 발급, 2월 3일 사용 — issued_at 기준 1월 집계, used_at 기준 2월 집계로 분리되어야 한다
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at, used_at) VALUES (?,?,?,?,?)",
+                couponId, 900_001L, "USED", LocalDateTime.of(2026, 1, 10, 0, 0), LocalDateTime.of(2026, 2, 3, 0, 0));
+
+        // 연도 시작 경계(1월 1일 00:00 포함) 검증용
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at, used_at) VALUES (?,?,?,?,?)",
+                couponId, 900_002L, "ISSUED", LocalDateTime.of(2026, 1, 1, 0, 0), null);
+        // 다음 해 1월 1일 00:00 제외 검증용 — 별도 회원(유니크 제약 user_id+coupon_id 회피)
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at, used_at) VALUES (?,?,?,?,?)",
+                couponId, 900_003L, "ISSUED", LocalDateTime.of(2027, 1, 1, 0, 0), null);
+
+        Map<String, Long> after = monthlyStatsSnapshot(2026);
+
+        assertThat(after.get("2026-01:issued") - before.get("2026-01:issued")).isEqualTo(2);
+        assertThat(after.get("2026-01:used") - before.get("2026-01:used")).isEqualTo(0);
+        assertThat(after.get("2026-02:issued") - before.get("2026-02:issued")).isEqualTo(0);
+        assertThat(after.get("2026-02:used") - before.get("2026-02:used")).isEqualTo(1);
+
+        // 2027-01-01 발급 건은 2026년 어느 달에도 나타나지 않아야 한다(다음 해 경계 제외)
+        long issuedDeltaAcrossYear = 0;
+        for (int month = 1; month <= 12; month++) {
+            String key = String.format("2026-%02d:issued", month);
+            issuedDeltaAcrossYear += after.get(key) - before.get(key);
+        }
+        assertThat(issuedDeltaAcrossYear).isEqualTo(2);
+    }
+
+    @Test
+    void 사용_후_복원된_발급은_사용_통계에서_제외된다() {
+        String base = "http://localhost:" + port;
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Long> before = monthlyStatsSnapshot(now.getYear());
+
+        Long couponId = createCoupon("복원통계쿠폰");
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at) VALUES (?,?,?,?)",
+                couponId, adminId, "ISSUED", now);
+
+        restTemplate.postForEntity(base + "/api/coupons/" + couponId + "/use",
+                new HttpEntity<>(Map.of("orderAmount", 10_000), adminHeaders()), String.class);
+        restTemplate.postForEntity(base + "/api/coupons/" + couponId + "/restore",
+                new HttpEntity<>(adminHeaders()), String.class);
+
+        String usedAt = jdbcTemplate.queryForObject(
+                "SELECT used_at FROM coupon_issue WHERE coupon_id=? AND user_id=?", String.class, couponId, adminId);
+        assertThat(usedAt).isNull();
+
+        Map<String, Long> after = monthlyStatsSnapshot(now.getYear());
+        long usedDeltaAcrossYear = 0;
+        for (int month = 1; month <= 12; month++) {
+            String key = String.format("%d-%02d:used", now.getYear(), month);
+            usedDeltaAcrossYear += after.get(key) - before.get(key);
+        }
+        assertThat(usedDeltaAcrossYear).isEqualTo(0);
+    }
+
+    @Test
+    void 내_쿠폰_목록은_issuedAt_역순으로_정렬되고_쿠폰_정보가_정확히_결합된다() {
+        String base = "http://localhost:" + port;
+        Long couponAId = createCoupon("내쿠폰테스트A");
+        Long couponBId = createCoupon("내쿠폰테스트B");
+        LocalDateTime earlier = LocalDateTime.now().minusDays(1);
+        LocalDateTime later = LocalDateTime.now();
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at) VALUES (?,?,?,?)",
+                couponAId, adminId, "ISSUED", earlier);
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at) VALUES (?,?,?,?)",
+                couponBId, adminId, "ISSUED", later);
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                base + "/api/coupons/my", HttpMethod.GET, new HttpEntity<>(adminHeaders()), Map.class);
+
+        List<Map<String, Object>> content = (List<Map<String, Object>>) response.getBody().get("content");
+        List<Map<String, Object>> ours = content.stream()
+                .filter(c -> couponAId.equals(Long.valueOf(c.get("couponId").toString()))
+                        || couponBId.equals(Long.valueOf(c.get("couponId").toString())))
+                .toList();
+
+        assertThat(ours).hasSize(2);
+        // issuedAt DESC이므로 나중에 발급된 B가 먼저 나와야 한다
+        assertThat(ours.get(0).get("couponName")).isEqualTo("내쿠폰테스트B");
+        assertThat(ours.get(1).get("couponName")).isEqualTo("내쿠폰테스트A");
+        assertThat(ours.get(0).get("discountType")).isEqualTo("FIXED");
+        assertThat(((Number) ours.get(0).get("discountValue")).intValue()).isEqualTo(1000);
+        assertThat(ours.get(0).get("status")).isEqualTo("ISSUED");
     }
 
     @Test
