@@ -283,7 +283,7 @@ class CouponServiceTest {
         Coupon coupon = Coupon.create("테스트", DiscountType.FIXED, 1000, null, null,
                 IssueType.ADMIN_ISSUED, null, null, LocalDateTime.now().plusDays(1));
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon));
-        when(couponIssueRepository.findByCouponIdAndUserId(1L, 1L)).thenReturn(Optional.empty());
+        when(couponIssueRepository.findByCouponIdAndUserIdForUpdate(1L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> couponService.useCoupon(1L, 1L, 10000))
                 .isInstanceOf(BusinessException.class)

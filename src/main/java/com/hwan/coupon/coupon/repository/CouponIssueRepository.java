@@ -4,9 +4,11 @@ import com.hwan.coupon.coupon.domain.CouponIssue;
 import com.hwan.coupon.coupon.domain.CouponIssueStatus;
 
 import com.hwan.coupon.coupon.dto.MonthlyCountProjection;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +20,12 @@ import java.util.Optional;
 public interface CouponIssueRepository extends JpaRepository<CouponIssue, Long> {
 
     Optional<CouponIssue> findByCouponIdAndUserId(Long couponId, Long userId);
+
+    // 같은 (couponId, userId) 행에 대한 사용/복원 요청이 겹치는 것만 막는다 — 재고 경합과
+    // 달리 한 쌍당 많아야 2~3개 요청이 겹치는 수준이라 비관적 락으로 충분하다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ci FROM CouponIssue ci WHERE ci.couponId = :couponId AND ci.userId = :userId")
+    Optional<CouponIssue> findByCouponIdAndUserIdForUpdate(@Param("couponId") Long couponId, @Param("userId") Long userId);
 
     long countByCouponId(Long couponId);
 

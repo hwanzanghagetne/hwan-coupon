@@ -121,14 +121,14 @@ public class CouponService {
                 log.debug("중복 발급 시도 couponId={} userId={}", couponId, userId);
                 throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
             }
-            log.info("선착순 당첨 확정 couponId={} userId={} remaining={}", couponId, userId, remaining);
+            log.debug("선착순 당첨 확정 couponId={} userId={} remaining={}", couponId, userId, remaining);
             requestSavedAt = System.nanoTime();
 
             CouponIssueAcceptedResponse response;
             try {
                 rabbitTemplate.send(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_FIRST_COME, message);
                 result = "ACCEPTED";
-                log.info("선착순 발급 요청 접수 couponId={} userId={}", couponId, userId);
+                log.debug("선착순 발급 요청 접수 couponId={} userId={}", couponId, userId);
                 response = CouponIssueAcceptedResponse.sent(couponId);
             } catch (AmqpException e) {
                 // 발행 성공 여부가 불확실하므로 Redis 당첨은 롤백하지 않고 "미확정"으로 응답한다.
@@ -162,7 +162,7 @@ public class CouponService {
             throw new BusinessException(ErrorCode.COUPON_EXPIRED);
         }
 
-        CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserId(couponId, userId)
+        CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserIdForUpdate(couponId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_ISSUE_NOT_FOUND));
 
         couponIssue.use(orderAmount, coupon.getMinOrderAmount());
@@ -171,7 +171,7 @@ public class CouponService {
 
     @Transactional
     public CouponIssueResponse restoreCoupon(Long couponId, Long userId) {
-        CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserId(couponId, userId)
+        CouponIssue couponIssue = couponIssueRepository.findByCouponIdAndUserIdForUpdate(couponId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_ISSUE_NOT_FOUND));
 
         couponIssue.restore();

@@ -203,4 +203,42 @@ class CouponIssueConcurrencyTest {
         assertThat(couponIssueRepository.countByCouponId(couponId)).isEqualTo(1);
         assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity()).isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("같은 발급 건에 사용 요청이 동시에 들어와도 정확히 한 번만 성공한다")
+    void 같은발급건_동시사용요청_한번만성공() throws InterruptedException {
+        Long userId = 1L;
+        jdbcTemplate.update(
+                "INSERT INTO coupon_issue (coupon_id, user_id, status, issued_at) VALUES (?, ?, 'ISSUED', NOW())",
+                couponId, userId);
+
+        int requestCount = 20;
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(requestCount);
+        AtomicInteger succeeded = new AtomicInteger();
+
+        for (int i = 0; i < requestCount; i++) {
+            executor.submit(() -> {
+                try {
+                    start.await();
+                    couponService.useCoupon(couponId, userId, 10_000);
+                    succeeded.incrementAndGet();
+                } catch (Exception ignored) {
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        start.countDown();
+        assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        executor.shutdownNow();
+
+        assertThat(succeeded).hasValue(1);
+        String status = jdbcTemplate.queryForObject(
+                "SELECT status FROM coupon_issue WHERE coupon_id = ? AND user_id = ?",
+                String.class, couponId, userId);
+        assertThat(status).isEqualTo("USED");
+    }
 }
