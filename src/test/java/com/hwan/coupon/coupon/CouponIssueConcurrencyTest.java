@@ -21,8 +21,12 @@ import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.hwan.coupon.global.exception.BusinessException;
+import com.hwan.coupon.global.exception.ErrorCode;
+
 import java.time.LocalDateTime;
 import org.springframework.test.context.ActiveProfiles;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -115,6 +119,23 @@ class CouponIssueConcurrencyTest {
         jdbcTemplate.update("DELETE FROM member WHERE id BETWEEN 1 AND ?", THREAD_COUNT);
     }
 
+    private void attempt(Runnable action, ErrorCode expectedFailureCode,
+                          AtomicInteger successCount, AtomicInteger expectedFailureCount,
+                          ConcurrentLinkedQueue<Throwable> unexpected) {
+        try {
+            action.run();
+            successCount.incrementAndGet();
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == expectedFailureCode) {
+                expectedFailureCount.incrementAndGet();
+            } else {
+                unexpected.add(e);
+            }
+        } catch (Exception e) {
+            unexpected.add(e);
+        }
+    }
+
     private void createMembers(int count) {
         StringBuilder sql = new StringBuilder(
                 "INSERT IGNORE INTO member (id, email, password, name, birthdate, phone, role, created_at, updated_at) VALUES "
@@ -137,69 +158,87 @@ class CouponIssueConcurrencyTest {
     @Test
     @DisplayName("재고(50)보다 많은 100명이 동시에 요청해도 정확히 50건만 발급된다")
     void 동시에_100명_발급요청_재고초과_방지() throws InterruptedException {
-        int totalQuantity = TOTAL_QUANTITY;
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger exhausted = new AtomicInteger();
+        ConcurrentLinkedQueue<Throwable> unexpected = new ConcurrentLinkedQueue<>();
+
         ExecutorService executor = Executors.newFixedThreadPool(32);
-        CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(THREAD_COUNT);
+        try {
+            for (int i = 0; i < THREAD_COUNT; i++) {
+                final long userId = i + 1;
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        attempt(() -> couponService.issueCoupon(couponId, userId),
+                                ErrorCode.COUPON_EXHAUSTED, success, exhausted, unexpected);
+                    } catch (InterruptedException e) {
+                        unexpected.add(e);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
 
-        for (int i = 0; i < THREAD_COUNT; i++) {
-            final long userId = i + 1;
-            executor.submit(() -> {
-                try {
-                    couponService.issueCoupon(couponId, userId);
-                } catch (Exception ignored) {
-                } finally {
-                    latch.countDown();
-                }
-            });
+            start.countDown();
+            assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
         }
-
-        latch.await();
-        executor.shutdown();
 
         // 선착순 발급은 이제 Redis 당첨 즉시 응답하고 실제 DB 반영은 큐 컨슈머가 처리하므로,
         // 컨슈머가 처리를 끝낼 때까지 기다린 뒤에 최종 상태를 확인해야 한다.
         await().atMost(10, TimeUnit.SECONDS).until(() ->
-                couponRepository.findById(couponId).orElseThrow().getIssuedQuantity() == totalQuantity
+                couponRepository.findById(couponId).orElseThrow().getIssuedQuantity() == TOTAL_QUANTITY
         );
 
-        Coupon coupon = couponRepository.findById(couponId).orElseThrow();
-        long issueCount = couponIssueRepository.countByCouponId(couponId);
-
-        assertThat(coupon.getIssuedQuantity()).isEqualTo(totalQuantity);
-        assertThat(issueCount).isEqualTo(totalQuantity);
+        assertThat(unexpected).isEmpty();
+        assertThat(success).hasValue(TOTAL_QUANTITY);
+        assertThat(exhausted).hasValue(THREAD_COUNT - TOTAL_QUANTITY);
+        assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity()).isEqualTo(TOTAL_QUANTITY);
+        assertThat(couponIssueRepository.countByCouponId(couponId)).isEqualTo(TOTAL_QUANTITY);
     }
 
     @Test
     @DisplayName("같은 사용자가 동시에 여러 번 요청해도 한 장만 발급된다")
     void 같은사용자_동시중복요청_한장만발급() throws InterruptedException {
         int requestCount = 50;
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger alreadyIssued = new AtomicInteger();
+        ConcurrentLinkedQueue<Throwable> unexpected = new ConcurrentLinkedQueue<>();
+
         ExecutorService executor = Executors.newFixedThreadPool(16);
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(requestCount);
-        AtomicInteger accepted = new AtomicInteger();
+        try {
+            for (int i = 0; i < requestCount; i++) {
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        attempt(() -> couponService.issueCoupon(couponId, 1L),
+                                ErrorCode.COUPON_ALREADY_ISSUED, success, alreadyIssued, unexpected);
+                    } catch (InterruptedException e) {
+                        unexpected.add(e);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
 
-        for (int i = 0; i < requestCount; i++) {
-            executor.submit(() -> {
-                try {
-                    start.await();
-                    couponService.issueCoupon(couponId, 1L);
-                    accepted.incrementAndGet();
-                } catch (Exception ignored) {
-                } finally {
-                    done.countDown();
-                }
-            });
+            start.countDown();
+            assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
         }
-
-        start.countDown();
-        assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
-        executor.shutdownNow();
 
         await().atMost(10, TimeUnit.SECONDS).until(() ->
                 couponIssueRepository.countByCouponId(couponId) == 1
         );
 
-        assertThat(accepted).hasValue(1);
+        assertThat(unexpected).isEmpty();
+        assertThat(success).hasValue(1);
+        assertThat(alreadyIssued).hasValue(requestCount - 1);
         assertThat(couponIssueRepository.countByCouponId(couponId)).isEqualTo(1);
         assertThat(couponRepository.findById(couponId).orElseThrow().getIssuedQuantity()).isEqualTo(1);
     }
@@ -213,29 +252,37 @@ class CouponIssueConcurrencyTest {
                 couponId, userId);
 
         int requestCount = 20;
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger alreadyUsed = new AtomicInteger();
+        ConcurrentLinkedQueue<Throwable> unexpected = new ConcurrentLinkedQueue<>();
+
         ExecutorService executor = Executors.newFixedThreadPool(8);
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(requestCount);
-        AtomicInteger succeeded = new AtomicInteger();
+        try {
+            for (int i = 0; i < requestCount; i++) {
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        attempt(() -> couponService.useCoupon(couponId, userId, 10_000),
+                                ErrorCode.COUPON_ALREADY_USED, success, alreadyUsed, unexpected);
+                    } catch (InterruptedException e) {
+                        unexpected.add(e);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
 
-        for (int i = 0; i < requestCount; i++) {
-            executor.submit(() -> {
-                try {
-                    start.await();
-                    couponService.useCoupon(couponId, userId, 10_000);
-                    succeeded.incrementAndGet();
-                } catch (Exception ignored) {
-                } finally {
-                    done.countDown();
-                }
-            });
+            start.countDown();
+            assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
         }
 
-        start.countDown();
-        assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
-        executor.shutdownNow();
-
-        assertThat(succeeded).hasValue(1);
+        assertThat(unexpected).isEmpty();
+        assertThat(success).hasValue(1);
+        assertThat(alreadyUsed).hasValue(requestCount - 1);
         String status = jdbcTemplate.queryForObject(
                 "SELECT status FROM coupon_issue WHERE coupon_id = ? AND user_id = ?",
                 String.class, couponId, userId);
