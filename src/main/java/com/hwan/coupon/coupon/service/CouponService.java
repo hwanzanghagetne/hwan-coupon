@@ -113,12 +113,12 @@ public class CouponService {
             redisCheckedAt = System.nanoTime();
             if (remaining == REDIS_RESULT_EXHAUSTED) {
                 result = "EXHAUSTED";
-                log.warn("쿠폰 소진 couponId={} userId={}", couponId, userId);
+                log.debug("쿠폰 소진 couponId={} userId={}", couponId, userId);
                 throw new BusinessException(ErrorCode.COUPON_EXHAUSTED);
             }
             if (remaining == REDIS_RESULT_ALREADY_ISSUED) {
                 result = "DUPLICATE";
-                log.warn("중복 발급 시도 couponId={} userId={}", couponId, userId);
+                log.debug("중복 발급 시도 couponId={} userId={}", couponId, userId);
                 throw new BusinessException(ErrorCode.COUPON_ALREADY_ISSUED);
             }
             log.info("선착순 당첨 확정 couponId={} userId={} remaining={}", couponId, userId, remaining);

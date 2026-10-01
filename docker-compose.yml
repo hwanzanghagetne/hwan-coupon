@@ -7,7 +7,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     ports:
-      - "13306:3306"
+      - "127.0.0.1:13306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -22,9 +22,14 @@ services:
     # AOF everysec — 매 쓰기 동기화(always)의 지연 대신, 최대 1초 유실 위험을 감수하고 성능을 택함.
     command: redis-server --appendonly yes --appendfsync everysec
     ports:
-      - "6379:6379"
+      - "127.0.0.1:16379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -33,10 +38,15 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "5672:5672"    # 앱 연결 포트 (AMQP)
-      - "15672:15672"  # 관리 UI 포트 (브라우저)
+      - "127.0.0.1:5672:5672"    # 앱 연결 포트 (AMQP)
+      - "127.0.0.1:15672:15672"  # 관리 UI 포트 (브라우저)
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   mysql_data:

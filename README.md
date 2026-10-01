@@ -53,10 +53,10 @@ cp src/main/resources/application-local.yaml.example src/main/resources/applicat
 ### 2) 인프라 기동
 
 ```bash
-docker compose up -d
+docker compose up -d --wait
 ```
 
-MySQL(호스트 `13306`), Redis(`6379`), RabbitMQ(`5672`, 관리 UI `15672`)가 뜹니다. 스키마는 Spring Boot 기동 시 Flyway가 자동으로 적용합니다.
+MySQL(호스트 `13306`), Redis(호스트 `16379`, 컨테이너 내부는 `6379` — 로컬에 다른 Redis가 떠 있는 환경과의 충돌을 피하기 위해 호스트 포트만 다르게 매핑), RabbitMQ(`5672`, 관리 UI `15672`)가 뜹니다. `--wait`은 컨테이너가 healthy해질 때까지 기다린 뒤 반환합니다(Spring Boot는 Compose 밖에서 별도로 실행되므로 `depends_on`으로는 기동 순서를 제어할 수 없습니다). 스키마는 Spring Boot 기동 시 Flyway가 자동으로 적용합니다.
 
 ### 3) 서버 실행 (`local` 프로필 필수)
 
@@ -64,7 +64,7 @@ MySQL(호스트 `13306`), Redis(`6379`), RabbitMQ(`5672`, 관리 UI `15672`)가 
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-Windows(cmd/PowerShell): `gradlew.bat bootRun --args="--spring.profiles.active=local"`
+Windows(cmd/PowerShell): `.\gradlew.bat bootRun --args="--spring.profiles.active=local"`
 
 ### 4) 실제 API로 동작 확인
 
@@ -87,7 +87,7 @@ curl -c admin_cookie.txt -X POST http://localhost:8080/api/members/login -H "Con
 curl -b admin_cookie.txt -X POST http://localhost:8080/api/coupons -H "Content-Type: application/json" -d '{
   "name":"first-come-test","discountType":"FIXED","discountValue":1000,
   "totalQuantity":5,"minOrderAmount":null,"issueType":"FIRST_COME",
-  "issueStartTime":null,"issueEndTime":null,"expiredAt":"2027-01-01T00:00:00"
+  "issueStartTime":null,"issueEndTime":null,"expiredAt":"2099-12-31T23:59:59"
 }'
 # 응답의 "id" 값을 아래 {couponId}에 사용
 
@@ -219,4 +219,3 @@ curl -b user_cookie.txt http://localhost:8080/api/coupons/my
 - `coupon:stock:{id}`, `coupon:issued:{id}` Redis 키에는 TTL이나 정리 로직이 없어 쿠폰이 쌓일수록 영구히 누적됩니다. 대사 스케줄러의 대상 쿠폰 범위도 만료 시점과 무관하게 계속 늘어납니다.
 - 선착순 발급 컨슈머의 동시 소비자 1개 제한은 애플리케이션 인스턴스 단위입니다. 여러 대로 수평 확장하면 인스턴스 수만큼 소비자가 늘어나며, 이 경우 DB UNIQUE 제약과 원자적 UPDATE가 최종 방어선이 됩니다.
 - CSRF 비활성화 등 일부 보안 설정은 "로컬/포트폴리오 시연 환경"이라는 전제에 맞춰져 있습니다. 브라우저 기반 클라이언트로 공개 배포한다면 재검토가 필요합니다.
-- `scripts/`에 k6 부하 테스트 스크립트와 과거 측정 결과가 남아 있습니다. 다만 이후 동시성 로직이 여러 차례 수정되어, 예전 결과 수치가 현재 코드의 성능을 그대로 대표하지는 않습니다. 접근 방식(Redis Lua Script vs 비관적 락 등)을 비교한 방법론 참고 자료로 남겨둡니다.
