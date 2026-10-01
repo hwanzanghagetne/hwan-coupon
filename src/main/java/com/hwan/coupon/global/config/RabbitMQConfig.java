@@ -6,6 +6,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -100,6 +101,20 @@ public class RabbitMQConfig {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(messageConverter());
         return template;
+    }
+
+    // 관리자 대량발급 컨슈머 전용 팩토리 — 기본 자동 ACK는 그대로 쓰되, 메시지 변환
+    // 실패처럼 리스너 메서드 진입 전에 나는 예외도 재큐잉하지 않고 DLQ로 보내도록
+    // defaultRequeueRejected만 false로 바꾼다. BatchProcessor 내부 처리 실패는
+    // AmqpRejectAndDontRequeueException을 던져 같은 경로로 DLQ에 보존한다.
+    @Bean
+    public SimpleRabbitListenerContainerFactory adminBatchContainerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer,
+            ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        configurer.configure(factory, connectionFactory);
+        factory.setContainerCustomizer(container -> container.setDefaultRequeueRejected(false));
+        return factory;
     }
 
     // 선착순 발급 배치 컨슈머 전용 팩토리 — 짧은 주기로 모은 메시지를 하나의 DB 트랜잭션으로

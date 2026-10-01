@@ -8,6 +8,7 @@ import com.hwan.coupon.coupon.repository.CouponRepository;
 import com.hwan.coupon.global.config.RabbitMQConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -28,7 +29,7 @@ public class BatchProcessor {
 
     private static final int CHUNK_SIZE = 1000;
 
-    @RabbitListener(queues = RabbitMQConfig.QUEUE)
+    @RabbitListener(queues = RabbitMQConfig.QUEUE, containerFactory = "adminBatchContainerFactory")
     public void processBatch(BatchMessagePayload payload) {
         Long batchId  = payload.batchId();
         Long couponId = payload.couponId();
@@ -96,6 +97,7 @@ public class BatchProcessor {
             if (failedUpdated == 0) {
                 log.warn("[BatchProcessor] batchId={}는 이미 다른 경로로 종료 확정되어 FAILED로 덮어쓰지 않음", batchId);
             }
+            throw new AmqpRejectAndDontRequeueException("배치 처리 실패 batchId=" + batchId, e);
         }
     }
 

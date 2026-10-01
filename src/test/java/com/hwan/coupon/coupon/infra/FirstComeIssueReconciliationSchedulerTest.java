@@ -90,4 +90,20 @@ class FirstComeIssueReconciliationSchedulerTest {
 
         verifyNoInteractions(couponIssueRepository, rabbitTemplate);
     }
+
+    @Test
+    @DisplayName("한 쿠폰 대사 중 예외가 나도 다음 쿠폰은 계속 처리한다")
+    void reconcile_한쿠폰_실패해도_다음쿠폰_계속처리() {
+        when(couponRepository.findByIssueTypeAndStatusIn(eq(IssueType.FIRST_COME), anyList()))
+                .thenReturn(List.of(coupon(1L), coupon(2L)));
+        when(couponRedisService.getIssuedUserIds(1L)).thenThrow(new RuntimeException("Redis 조회 실패"));
+        when(couponRedisService.getIssuedUserIds(2L)).thenReturn(Set.of("30"));
+        when(couponIssueRepository.findUserIdsByCouponId(2L)).thenReturn(List.of());
+
+        scheduler.reconcile();
+
+        verify(rabbitTemplate).convertAndSend(
+                eq(RabbitMQConfig.EXCHANGE), eq(RabbitMQConfig.ROUTING_KEY_FIRST_COME),
+                eq(new FirstComeIssuePayload(2L, 30L)));
+    }
 }

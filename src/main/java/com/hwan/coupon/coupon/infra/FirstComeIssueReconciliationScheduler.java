@@ -42,7 +42,12 @@ public class FirstComeIssueReconciliationScheduler {
     public void reconcile() {
         List<Coupon> targets = couponRepository.findByIssueTypeAndStatusIn(IssueType.FIRST_COME, TARGET_STATUSES);
         for (Coupon coupon : targets) {
-            reconcileCoupon(coupon.getId());
+            try {
+                reconcileCoupon(coupon.getId());
+            } catch (Exception e) {
+                log.error("[FirstComeReconciliation] 쿠폰 대사 실패, 다음 쿠폰은 계속 진행 couponId={} error={}",
+                        coupon.getId(), e.getMessage(), e);
+            }
         }
     }
 
