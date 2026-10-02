@@ -1,5 +1,7 @@
 # 대량 쿠폰 발급 시스템
 
+![test](https://github.com/hwanzanghagetne/hwan-coupon/actions/workflows/test.yml/badge.svg)
+
 > 선착순 쿠폰 발급의 동시성 문제와 관리자 대량 발급의 비동기 처리 문제를 해결하기 위해 만든 Spring Boot 백엔드 프로젝트
 
 <br/>
