@@ -72,6 +72,8 @@ Windows(cmd/PowerShell): `.\gradlew.bat bootRun --args="--spring.profiles.active
 
 일반 회원가입은 `USER` 권한만 생성되고, 쿠폰 생성 API는 `ADMIN` 권한이 필요합니다. 운영용 기본 관리자 계정이나 관리자 생성 API는 두지 않았으므로, 로컬 개발 환경에서는 아래처럼 가입한 계정의 권한을 DB에서 직접 바꿉니다.
 
+> 아래 API 예제는 macOS/Linux/Git Bash 기준입니다. Windows PowerShell에서는 `curl` 대신 `curl.exe`를 사용하세요.
+
 ```bash
 # 4-1. 관리자로 쓸 계정과, 발급받을 일반 계정을 각각 회원가입
 curl -X POST http://localhost:8080/api/members/signup -H "Content-Type: application/json" -d '{"email":"admin@local.test","password":"password123","name":"admin","birthdate":"1990-01-01","phone":"010-0000-0000"}'
@@ -112,7 +114,7 @@ curl -b user_cookie.txt http://localhost:8080/api/coupons/my
 ./gradlew test
 ```
 
-통합 테스트가 Testcontainers로 MySQL/RabbitMQ 컨테이너를 직접 띄우므로 **Docker가 실행 중이어야 합니다.**
+통합 테스트가 Testcontainers로 MySQL, Redis, RabbitMQ 컨테이너를 직접 띄우므로 **Docker가 실행 중이어야 합니다.**
 
 ---
 
@@ -124,7 +126,7 @@ curl -b user_cookie.txt http://localhost:8080/api/coupons/my
 
 ### 역할 분리
 - `Redis`: 선착순 발급의 빠른 판정과 동시성 제어, 쿠폰 조회 캐시, 세션 저장소
-- `RabbitMQ`: 관리자 대량 발급 작업을 API 요청과 분리해 비동기로 처리
+- `RabbitMQ`: 관리자 대량 발급 처리와 선착순 당첨자의 비동기 DB 반영
 - `MySQL`: 쿠폰, 발급 이력, 배치 상태의 최종 영속 저장소
 
 ---
@@ -170,13 +172,13 @@ curl -b user_cookie.txt http://localhost:8080/api/coupons/my
 - 이를 개선하기 위해 Redis Lua Script로 전환해 재고 차감과 중복 체크를 원자적으로 처리했습니다.
 
 ### 2) Redis와 DB 간 정합성 보강
-- Redis에서 재고를 선점한 뒤 DB 초기화가 실패하면, 재고 키 자체가 없는 쿠폰이 생길 수 있습니다.
+- FIRST_COME 쿠폰 생성 시 DB 저장과 Redis 재고 초기화의 성공 여부가 어긋나면, 재고 키 자체가 없는 쿠폰이 생길 수 있습니다.
 - `GenerationType.IDENTITY`가 `save()` 시점에 이미 ID를 확정해준다는 점을 활용해, 쿠폰 생성과 같은 트랜잭션 안에서 동기로 Redis 재고를 초기화합니다. 이 호출이 실패하면 쿠폰 생성 자체가 롤백됩니다.
 - 이미 존재하는 쿠폰의 재고 키가 운영 중 유실되면, 자동으로 재생성하지 않고 발급을 거절(503)합니다. DB의 발급 수량만으로는 유실 시점에 이미 당첨된 사람이 있었는지 알 수 없어, 잘못 재배정하면 오히려 초과 발급으로 이어질 수 있기 때문입니다.
 
 ### 3) 선착순 발급의 동시 쓰기 데드락
 - Redis로 당첨자를 가려낸 뒤에도, 당첨된 수백 명이 거의 동시에 `coupon`/`coupon_issue`를 갱신하면서 DB 데드락이 발생했습니다.
-- 당첨 확정 시 DB에 바로 쓰지 않고 RabbitMQ에 발행한 뒤, 단일 컨슈머(`FirstComeIssueProcessor`)가 짧은 주기로 모아 한 번에 배치 반영하도록 바꿨습니다. 동시 쓰기 자체가 없어지므로 데드락이 구조적으로 사라집니다.
+- 당첨 확정 시 DB에 바로 쓰지 않고 RabbitMQ에 발행한 뒤, 단일 컨슈머(`FirstComeIssueProcessor`)가 짧은 주기로 모아 한 번에 배치 반영하도록 바꿨습니다. 단일 인스턴스에서는 컨슈머 하나가 DB 반영을 순차화해 동시 쓰기 경합을 구조적으로 제거합니다. 여러 인스턴스로 확장하면 인스턴스 수만큼 컨슈머가 늘어나 경합이 다시 생길 수 있는데, 이 경우 DB UNIQUE 제약과 원자적 UPDATE가 최종 정합성을 방어합니다.
 - 사용자는 발급 결과를 기다리지 않고 접수 응답(`202`)을 즉시 받고, 이후 내 쿠폰함 조회로 최종 결과를 확인합니다.
 
 ### 4) 관리자 대량 발급의 요청-처리 분리
@@ -202,6 +204,7 @@ curl -b user_cookie.txt http://localhost:8080/api/coupons/my
 | 로그아웃 | `POST` | `/api/members/logout` |
 | 쿠폰 생성 | `POST` | `/api/coupons` |
 | 쿠폰 목록 조회 | `GET` | `/api/coupons` |
+| 쿠폰 단건 조회 | `GET` | `/api/coupons/{couponId}` |
 | 선착순 쿠폰 발급 요청 | `POST` | `/api/coupons/{couponId}/issue` |
 | 내 쿠폰 조회 | `GET` | `/api/coupons/my` |
 | 쿠폰 사용 | `POST` | `/api/coupons/{couponId}/use` |
